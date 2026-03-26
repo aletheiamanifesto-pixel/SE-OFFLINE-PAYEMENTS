@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.pytest_cache/
+.coverage
+coverage.xml
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+target/
+applet/build/
+
+# Bridge log locale
+bridge/bridge_tx_log.json
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
