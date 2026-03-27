@@ -1,0 +1,170 @@
+# aegis_config.yaml — Configurazione dell'integrazione SE-OFFLINE-PAYEMENTS ↔ aegis-protocol
+#
+# Questo file contiene tutti i parametri di configurazione per l'integrazione
+# tra il sistema di pagamenti offline su Secure Element e il backend blockchain
+# aegis-protocol su Polygon Amoy.
+#
+# Selezione del profilo attivo:
+#   - Imposta la variabile d'ambiente AEGIS_PROFILE per cambiare profilo
+#   - Default: development (modalità mock, nessuna chiamata reale)
+#
+# Utilizzo in Python:
+#   import yaml
+#   with open("config/aegis_config.yaml") as f:
+#       cfg = yaml.safe_load(f)
+#   profilo = cfg["profiles"][cfg["active_profile"]]
+
+# Profilo attivo (development | staging | production)
+active_profile: development
+
+# =============================================================================
+# PARAMETRI COMUNI A TUTTI I PROFILI
+# =============================================================================
+
+common:
+  # Token AegisEUR: standard ERC-20, 6 decimali (come USDC)
+  token_decimals: 6
+
+  # Soglia MiCA per KYC obbligatorio (importo in EUR)
+  mica_kyc_threshold_eur: 1000.0
+
+  # Timeout HTTP in secondi (per le chiamate REST ad aegis-protocol)
+  http_timeout_seconds: 30
+
+  # Policy di retry per le chiamate HTTP fallite
+  retry:
+    max_attempts: 3
+    backoff_factor: 0.5          # Backoff esponenziale: 0.5s, 1s, 2s, ...
+    retry_on_status: [429, 500, 502, 503, 504]
+
+  # Percorso del registry dispositivi SE (relativo alla root del progetto)
+  device_registry_path: "config/device_registry.json"
+
+  # Abilita la verifica ECDSA locale prima di inviare la proof on-chain
+  local_ecdsa_verification: true
+
+  # Fallback alla modalità simulata se aegis-protocol non è raggiungibile
+  fallback_to_mock: true
+
+# =============================================================================
+# PROFILO: DEVELOPMENT
+# Modalità mock — nessuna chiamata HTTP reale, nessuna blockchain
+# Ideale per sviluppo locale, unit test, CI/CD
+# =============================================================================
+
+profiles:
+  development:
+    name: "Development (Mock)"
+    description: "Modalità simulata locale — nessuna blockchain reale"
+    mock_mode: true
+
+    # URL dell'API (non usato in mock mode, ma conservato per chiarezza)
+    api_url: "http://localhost:8000"
+
+    # Credenziali di test (placeholder — non usate in mock mode)
+    auth:
+      username: "dev_bridge"
+      password: "dev_secret_changeme"
+
+    # Blockchain (valori di test, non effettivi)
+    blockchain:
+      chain_id: 80002             # Polygon Amoy Testnet
+      network_name: "polygon-amoy-mock"
+      rpc_url: "http://localhost:8545"   # Node locale simulato
+
+    # Smart contract (placeholder per sviluppo)
+    contracts:
+      aegis_eur: "0x0000000000000000000000000000000000000000"
+      noir_verifier: "0x0000000000000000000000000000000000000001"
+
+    # Log verboso per debug
+    log_level: "DEBUG"
+
+  # ===========================================================================
+  # PROFILO: STAGING
+  # Rete di test reale (Polygon Amoy testnet)
+  # Richiede aegis-protocol in esecuzione su ambiente di staging
+  # ===========================================================================
+
+  staging:
+    name: "Staging (Polygon Amoy Testnet)"
+    description: "Ambiente di pre-produzione su Polygon Amoy testnet"
+    mock_mode: false
+
+    # URL dell'API aegis-protocol di staging
+    api_url: "http://localhost:8000"   # Aggiorna con URL staging effettivo
+
+    # Credenziali staging (usare variabili d'ambiente in produzione)
+    auth:
+      username: "staging_bridge"
+      password: "staging_secret_changeme"
+      # In alternativa, usa API key:
+      # api_key: "${AEGIS_API_KEY}"   # da variabile d'ambiente
+
+    # Blockchain: Polygon Amoy Testnet
+    blockchain:
+      chain_id: 80002
+      network_name: "polygon-amoy"
+      rpc_url: "https://rpc-amoy.polygon.technology"
+      explorer_url: "https://amoy.polygonscan.com"
+
+    # Smart contract su Polygon Amoy
+    contracts:
+      # Aggiornare con gli indirizzi effettivi dopo il deploy su Amoy
+      aegis_eur: "0x0000000000000000000000000000000000000000"
+      noir_verifier: "0x0000000000000000000000000000000000000001"
+
+    # Timeout più lungo per la testnet (latenza variabile)
+    http_timeout_seconds: 60
+
+    retry:
+      max_attempts: 5
+      backoff_factor: 1.0
+
+    log_level: "INFO"
+
+  # ===========================================================================
+  # PROFILO: PRODUCTION
+  # Rete Polygon mainnet (o L2 di produzione AEGIS)
+  # Richiede credenziali sicure e hardware reale
+  # ===========================================================================
+
+  production:
+    name: "Production"
+    description: "Ambiente di produzione — usare con estrema cautela"
+    mock_mode: false
+
+    # URL dell'API aegis-protocol di produzione
+    api_url: "https://api.aegis-protocol.eu"   # Aggiornare con URL reale
+
+    # IMPORTANTE: Non inserire credenziali reali in questo file!
+    # Usa variabili d'ambiente o secret manager.
+    auth:
+      username: "${AEGIS_USERNAME}"
+      password: "${AEGIS_PASSWORD}"
+
+    # Blockchain: Polygon Mainnet (o L2 dedicato)
+    blockchain:
+      chain_id: 137              # Polygon Mainnet
+      network_name: "polygon-mainnet"
+      rpc_url: "${AEGIS_RPC_URL}"
+      explorer_url: "https://polygonscan.com"
+
+    # Smart contract su mainnet
+    contracts:
+      aegis_eur: "${AEGIS_EUR_CONTRACT}"
+      noir_verifier: "${NOIR_VERIFIER_CONTRACT}"
+
+    # Impostazioni conservative per produzione
+    http_timeout_seconds: 45
+    retry:
+      max_attempts: 3
+      backoff_factor: 2.0
+
+    # NON abilitare fallback in produzione (meglio fallire visibilmente)
+    fallback_to_mock: false
+
+    # Verifica ECDSA sempre abilitata in produzione
+    local_ecdsa_verification: true
+
+    log_level: "WARNING"
