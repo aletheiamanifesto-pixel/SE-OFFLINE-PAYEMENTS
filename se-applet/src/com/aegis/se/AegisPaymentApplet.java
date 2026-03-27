@@ -202,7 +202,7 @@ public class AegisPaymentApplet extends Applet {
                    | ((buf[(short)(off+1)] & 0xFF) << 16)
                    | ((buf[(short)(off+2)] & 0xFF) <<  8)
                    | ((buf[(short)(off+3)] & 0xFF));
-        off += 4;
+        off = (short)(off + 4);
         // Timestamp (8 bytes)
         short tsOff = off;
 
@@ -233,7 +233,7 @@ public class AegisPaymentApplet extends Applet {
         short off = ISO7816.OFFSET_CDATA;
         // Sender uncompressed public key (65 B)
         short spkOff = off;
-        off += 65;
+        off = (short)(off + 65);
         // Remaining bytes = signed receipt
         short receiptLen = (short)(lc - 65);
 

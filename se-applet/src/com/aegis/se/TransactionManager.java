@@ -138,7 +138,7 @@ public class TransactionManager {
         // Timestamp (8 bytes)
         Util.arrayCopyNonAtomic(timestamp, tsOff,
                                 receiptBuf, off, (short)8);
-        off += 8;
+        off = (short)(off + 8);
 
         // Sign the header
         short sigLen = crypto.sign(receiptBuf, (short)0, off,

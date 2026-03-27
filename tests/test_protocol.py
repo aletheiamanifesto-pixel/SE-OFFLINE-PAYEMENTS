@@ -63,7 +63,6 @@ class TestAPDUProtocolEdgeCases:
         assert parsed.sw == 0x6700  # Wrong length
 
     def test_get_pubkey_without_keygen(self):
-        client, sim = make_client.__wrapped__() if hasattr(make_client, '__wrapped__') else (None, None)
         # Direct test: try to get pubkey without generating keys
         sim = SimulatedSE("NoKeys")
         resp = sim.process_apdu(bytes([CLA_AEGIS, 0x14, 0x00, 0x00]))
