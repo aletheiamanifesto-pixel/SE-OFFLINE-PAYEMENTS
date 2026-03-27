@@ -37,7 +37,7 @@ profiles:
   # ─────────────────────────────────────────────────────────────
   test_acr122u:
     backend: pcscard
-    reader: "ACS ACR122U"            # Nome del lettore (substr match)
+    reader_name: "ACS ACR122U"          # Nome del lettore (substr match)
     aid: "D2760000604101"            # AID dell'applet AEGIS (7 byte, hex)
     timeout_ms: 5000                 # Timeout NFC in millisecondi
     retries: 3                       # Tentativi in caso di errori transienti

@@ -73,6 +73,8 @@ class ResilientPaymentFlow:
             max_retries: numero massimo di tentativi per errori transienti
             retry_delay_sec: pausa base tra i tentativi (si moltiplica per il numero del tentativo)
         """
+        if max_retries < 1:
+            raise ValueError(f"max_retries deve essere >= 1, ricevuto: {max_retries}")
         self._max_retries = max_retries
         self._retry_delay_sec = retry_delay_sec
 

@@ -196,6 +196,7 @@ class HardwareSecureElement(SecureElementInterface):
             raise CardCommunicationError(f"Errore durante SELECT: {e}") from e
 
         if sw == SW_FILE_NOT_FOUND or sw == 0x6999:
+            # 0x6999 = condizioni di esecuzione non soddisfatte (es. applet bloccato)
             raise AppletNotFoundError(
                 f"Applet con AID {aid.hex().upper()} non trovato sulla carta. "
                 "Installa l'applet con GlobalPlatformPro prima di procedere.",

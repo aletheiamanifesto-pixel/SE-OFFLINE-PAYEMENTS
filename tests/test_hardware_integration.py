@@ -335,8 +335,8 @@ class TestResilientPaymentFlow:
         successo = flusso.esegui_pagamento(pagatore, ricevente, importo=2500)
 
         assert successo is True
-        assert pagatore.get_balance() == 7500   # 100€ - 25€
-        assert ricevente.get_balance() == 7500  # 50€ + 25€
+        assert pagatore.get_balance() == 7500   # 100€ - 25€ = 75€
+        assert ricevente.get_balance() == 7500  # 50€ + 25€ = 75€
 
     def test_pagamento_saldo_insufficiente(self, coppia_simulatori):
         """Il pagamento deve fallire se il saldo è insufficiente."""
