@@ -355,6 +355,7 @@ class TestFullPaymentFlow:
         assert bob.get_balance() == 7500  # 50€ + 25€ = 75€
 
         # PASSO 5: Alice firma la transazione
+        # Formato: importo (4 byte) + contatore (4 byte) + timestamp (8 byte) = 16 byte
         dati_tx = struct.pack('>IIQ', importo, alice.get_counter(), int(time.time()))
         firma = alice.sign_transaction(dati_tx)
         assert len(firma) > 0
