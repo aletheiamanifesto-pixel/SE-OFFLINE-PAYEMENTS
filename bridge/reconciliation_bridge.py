@@ -18,8 +18,16 @@ In questa simulazione, logghiamo le operazioni per dimostrare il flusso.
 """
 
 import json
+import logging
+import struct
 import time
 from typing import Optional
+
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import hashes
+from cryptography.exceptions import InvalidSignature
+
+logger = logging.getLogger(__name__)
 
 
 class TransactionData:
@@ -114,6 +122,20 @@ class ReconciliationBridge:
         # Log degli eventi — il "diario dell'ufficio postale"
         self._event_log: list[str] = []
 
+        # Registry chiavi pubbliche per verifica ECDSA: sender_id → chiave pubblica (65 byte)
+        self._public_key_registry: dict[str, bytes] = {}
+
+    def register_public_key(self, sender_id: str, public_key: bytes) -> None:
+        """
+        Registra la chiave pubblica di un mittente per la verifica ECDSA.
+
+        Parametri:
+            sender_id: identificativo del mittente (es. "alice_se_001")
+            public_key: chiave pubblica in formato uncompressed point (65 byte)
+        """
+        self._public_key_registry[sender_id] = public_key
+        self._log(f"🔑 Chiave pubblica registrata per: {sender_id}")
+
     def add_transaction(self, tx_data: dict) -> bool:
         """
         Aggiunge una transazione alla coda di riconciliazione.
@@ -205,8 +227,56 @@ class ReconciliationBridge:
             self._log("⚠️ Verifica fallita: firma mancante")
             return False
 
+        # Controllo 5 (opzionale): Verifica crittografica ECDSA
+        # Se il registry è configurato e contiene la chiave del mittente,
+        # verifichiamo la firma ECDSA. Altrimenti manteniamo la retrocompatibilità.
+        sender_id = tx_data["sender_id"]
+        if sender_id in self._public_key_registry:
+            if not self._verify_ecdsa(tx_data):
+                self._log(f"⚠️ Verifica fallita: firma ECDSA non valida per {sender_id}")
+                return False
+
         self._log(f"✅ Transazione verificata: {tx_data['sender_id']} → {tx_data['receiver_id']}")
         return True
+
+    def _verify_ecdsa(self, tx_data: dict) -> bool:
+        """
+        Verifica crittograficamente la firma ECDSA di una transazione.
+
+        Il messaggio firmato è la rappresentazione binaria canonica della transazione:
+        importo (4 byte, big-endian) || contatore (4 byte, big-endian) || timestamp (8 byte, big-endian)
+
+        Parametri:
+            tx_data: dizionario con i dati della transazione
+
+        Ritorna:
+            True se la firma è crittograficamente valida, False altrimenti
+        """
+        try:
+            pub_key_bytes = self._public_key_registry[tx_data["sender_id"]]
+            pub_key = ec.EllipticCurvePublicKey.from_encoded_point(
+                ec.SECP256R1(), pub_key_bytes
+            )
+
+            # Decodifica della firma (hex string → bytes)
+            sig_value = tx_data["signature"]
+            if isinstance(sig_value, str):
+                signature_bytes = bytes.fromhex(sig_value)
+            else:
+                signature_bytes = bytes(sig_value)
+
+            # Ricostruzione del messaggio canonico firmato
+            messaggio = struct.pack(
+                '>IIQ',
+                tx_data["amount"],
+                tx_data["counter"],
+                int(tx_data.get("timestamp", 0)),
+            )
+
+            pub_key.verify(signature_bytes, messaggio, ec.ECDSA(hashes.SHA256()))
+            return True
+        except (InvalidSignature, Exception):
+            return False
 
     def reconcile(self, api_url: str = "https://aegis.protocol/api/v1/reconcile") -> dict:
         """
@@ -309,9 +379,9 @@ class ReconciliationBridge:
 
     def _log(self, messaggio: str):
         """
-        Registra un evento nel log interno.
+        Registra un evento nel log interno e nel logger di sistema.
         Come annotare un'operazione nel registro dell'ufficio.
         """
         entry = f"[{time.strftime('%H:%M:%S')}] {messaggio}"
         self._event_log.append(entry)
-        print(entry)
+        logger.info(entry)

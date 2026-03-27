@@ -1,0 +1,26 @@
+[project]
+name = "aegis-offline-payments"
+version = "0.1.0"
+description = "Sistema di pagamento offline peer-to-peer basato su Secure Element NFC per token AEGIS Euro"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+    "cryptography>=41.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["host_app*", "bridge*", "examples*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

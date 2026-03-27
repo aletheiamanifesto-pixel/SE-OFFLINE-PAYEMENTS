@@ -9,18 +9,13 @@ Esecuzione: pytest tests/test_payment_flow.py -v
 """
 
 import struct
-import sys
-import os
 import time
 
 import pytest
 
-# Aggiungiamo il percorso del progetto per permettere gli import
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
 from host_app.python.se_simulator import (
     SecureElementSimulator, SW_OK, SW_INSUFFICIENT_BALANCE, SW_WRONG_LENGTH,
-    SW_INS_NOT_SUPPORTED
+    SW_INS_NOT_SUPPORTED, SW_CONDITIONS_NOT_SATISFIED, SW_MAX_BALANCE_EXCEEDED
 )
 from bridge.reconciliation_bridge import ReconciliationBridge
 
@@ -69,6 +64,9 @@ class TestGetBalance:
         """
         se = SecureElementSimulator(initial_balance=10000)
 
+        apdu_select = SecureElementSimulator.build_apdu(0x00, 0xA4)
+        se.process_apdu(apdu_select)
+
         apdu_balance = SecureElementSimulator.build_apdu(0x80, 0x10)
         risposta = se.process_apdu(apdu_balance)
 
@@ -101,6 +99,9 @@ class TestDebit:
         """
         se = SecureElementSimulator(initial_balance=10000)
 
+        apdu_select = SecureElementSimulator.build_apdu(0x00, 0xA4)
+        se.process_apdu(apdu_select)
+
         # Addebitiamo 2500 centesimi (25.00€)
         importo = struct.pack('>I', 2500)
         apdu_debit = SecureElementSimulator.build_apdu(0x80, 0x20, data=importo)
@@ -118,6 +119,9 @@ class TestDebit:
         """
         se = SecureElementSimulator(initial_balance=1000)  # Solo 10.00€
 
+        apdu_select = SecureElementSimulator.build_apdu(0x00, 0xA4)
+        se.process_apdu(apdu_select)
+
         # Proviamo ad addebitare 5000 centesimi (50.00€) — impossibile!
         importo = struct.pack('>I', 5000)
         apdu_debit = SecureElementSimulator.build_apdu(0x80, 0x20, data=importo)
@@ -132,6 +136,9 @@ class TestDebit:
         Come compilare un modulo di prelievo senza scrivere l'importo.
         """
         se = SecureElementSimulator()
+
+        apdu_select = SecureElementSimulator.build_apdu(0x00, 0xA4)
+        se.process_apdu(apdu_select)
 
         # Mandiamo solo 2 byte invece di 4
         apdu_debit = SecureElementSimulator.build_apdu(0x80, 0x20, data=b'\x00\x01')
@@ -167,6 +174,9 @@ class TestCredit:
         Se hai 50€ e versi 25€, devi averne 75€.
         """
         se = SecureElementSimulator(initial_balance=5000)
+
+        apdu_select = SecureElementSimulator.build_apdu(0x00, 0xA4)
+        se.process_apdu(apdu_select)
 
         importo = struct.pack('>I', 2500)
         apdu_credit = SecureElementSimulator.build_apdu(0x80, 0x30, data=importo)
@@ -228,6 +238,10 @@ class TestCounter:
     def test_counter_via_apdu(self):
         """Verifica il contatore tramite comando APDU GET_COUNTER."""
         se = SecureElementSimulator(initial_balance=10000)
+
+        apdu_select = SecureElementSimulator.build_apdu(0x00, 0xA4)
+        se.process_apdu(apdu_select)
+
         se.debit(500)
 
         apdu_counter = SecureElementSimulator.build_apdu(0x80, 0x40)
@@ -292,6 +306,9 @@ class TestSignAndVerify:
         Come usare il POS per firmare una transazione.
         """
         se = SecureElementSimulator()
+
+        apdu_select = SecureElementSimulator.build_apdu(0x00, 0xA4)
+        se.process_apdu(apdu_select)
 
         dati = b"test transaction data"
         apdu_sign = SecureElementSimulator.build_apdu(0x80, 0x50, data=dati)
@@ -376,6 +393,9 @@ class TestFullPaymentFlow:
         Come chiedere un servizio inesistente allo sportello.
         """
         se = SecureElementSimulator()
+
+        apdu_select = SecureElementSimulator.build_apdu(0x00, 0xA4)
+        se.process_apdu(apdu_select)
 
         # INS=0xFF non esiste
         apdu_sconosciuto = SecureElementSimulator.build_apdu(0x80, 0xFF)
@@ -463,3 +483,188 @@ class TestReconciliationBridge:
         }
 
         assert bridge.verify_transaction(tx) is False
+
+
+# =============================================================================
+# TEST 9: Flag _selected — l'applet deve essere selezionata prima di altri comandi
+# =============================================================================
+
+class TestSelectedFlag:
+    """Test per il controllo _selected — comandi APDU proprietari richiedono SELECT."""
+
+    def test_apdu_without_select_rejected(self):
+        """
+        Verifica che i comandi proprietari vengano rifiutati senza SELECT preventivo.
+        Come chiedere un servizio prima di fare check-in: l'operatore rifiuta.
+        """
+        se = SecureElementSimulator(initial_balance=10000)
+
+        # GET_BALANCE senza SELECT deve restituire CONDITIONS_NOT_SATISFIED
+        apdu_balance = SecureElementSimulator.build_apdu(0x80, 0x10)
+        risposta = se.process_apdu(apdu_balance)
+        assert _estrai_sw(risposta) == SW_CONDITIONS_NOT_SATISFIED
+
+    def test_apdu_after_select_accepted(self):
+        """
+        Verifica che i comandi proprietari vengano accettati dopo SELECT.
+        Come fare check-in e poi accedere ai servizi.
+        """
+        se = SecureElementSimulator(initial_balance=10000)
+
+        apdu_select = SecureElementSimulator.build_apdu(0x00, 0xA4)
+        se.process_apdu(apdu_select)
+
+        apdu_balance = SecureElementSimulator.build_apdu(0x80, 0x10)
+        risposta = se.process_apdu(apdu_balance)
+        assert _estrai_sw(risposta) == SW_OK
+
+    def test_iso_select_always_allowed(self):
+        """
+        Verifica che il SELECT ISO (CLA=0x00) sia sempre permesso.
+        È il comando iniziale obbligatorio per qualsiasi sessione.
+        """
+        se = SecureElementSimulator()
+        apdu_select = SecureElementSimulator.build_apdu(0x00, 0xA4)
+        risposta = se.process_apdu(apdu_select)
+        assert _estrai_sw(risposta) == SW_OK
+
+
+# =============================================================================
+# TEST 10: Saldo massimo (overflow protection)
+# =============================================================================
+
+class TestMaxBalance:
+    """Test per la protezione da overflow del saldo."""
+
+    def test_credit_exceeds_max_balance_via_method(self):
+        """
+        Verifica che credit() fallisca se il nuovo saldo supererebbe MAX_BALANCE.
+        Come non poter depositare più di quanto possa contenere il portafoglio.
+        """
+        from host_app.python.se_simulator import MAX_BALANCE
+        se = SecureElementSimulator(initial_balance=MAX_BALANCE)
+
+        # Qualsiasi accredito deve fallire quando si è già al massimo
+        assert se.credit(1) is False, \
+            "Accredito con saldo al massimo deve fallire"
+        assert se.get_balance() == MAX_BALANCE, \
+            "Il saldo non deve cambiare dopo accredito fallito"
+
+    def test_credit_exceeds_max_balance_via_apdu(self):
+        """
+        Verifica che il comando APDU CREDIT restituisca SW_MAX_BALANCE_EXCEEDED
+        quando il nuovo saldo supererebbe MAX_BALANCE.
+        """
+        from host_app.python.se_simulator import MAX_BALANCE
+        se = SecureElementSimulator(initial_balance=MAX_BALANCE)
+
+        apdu_select = SecureElementSimulator.build_apdu(0x00, 0xA4)
+        se.process_apdu(apdu_select)
+
+        importo = struct.pack('>I', 1)
+        apdu_credit = SecureElementSimulator.build_apdu(0x80, 0x30, data=importo)
+        risposta = se.process_apdu(apdu_credit)
+        assert _estrai_sw(risposta) == SW_MAX_BALANCE_EXCEEDED
+
+    def test_credit_at_max_boundary_allowed(self):
+        """
+        Verifica che un accredito che porta esattamente al massimo sia consentito.
+        """
+        from host_app.python.se_simulator import MAX_BALANCE
+        se = SecureElementSimulator(initial_balance=MAX_BALANCE - 100)
+
+        assert se.credit(100) is True
+        assert se.get_balance() == MAX_BALANCE
+
+
+# =============================================================================
+# TEST 11: Verifica ECDSA nel ReconciliationBridge
+# =============================================================================
+
+class TestBridgeECDSAVerification:
+    """Test per la verifica ECDSA crittografica nel ReconciliationBridge."""
+
+    def test_register_public_key(self):
+        """
+        Verifica che sia possibile registrare una chiave pubblica nel bridge.
+        """
+        bridge = ReconciliationBridge()
+        se = SecureElementSimulator()
+        pub_key = se.get_certificate()
+
+        bridge.register_public_key("alice_se_001", pub_key)
+        # Nessuna eccezione significa che la registrazione è riuscita
+
+    def test_verify_with_valid_ecdsa_signature(self):
+        """
+        Verifica che una transazione con firma ECDSA valida superi la verifica
+        quando la chiave pubblica è registrata nel bridge.
+        """
+        bridge = ReconciliationBridge()
+        se = SecureElementSimulator()
+
+        # Registriamo la chiave pubblica del SE
+        pub_key = se.get_certificate()
+        bridge.register_public_key("alice_se_001", pub_key)
+
+        # Costruiamo e firmiamo il messaggio canonico
+        amount = 2500
+        counter = 1
+        ts = int(time.time())
+        messaggio = struct.pack('>IIQ', amount, counter, ts)
+        firma_bytes = se.sign_transaction(messaggio)
+
+        tx = {
+            "sender_id": "alice_se_001",
+            "receiver_id": "bob_se_002",
+            "amount": amount,
+            "counter": counter,
+            "signature": firma_bytes.hex(),
+            "timestamp": float(ts),
+        }
+
+        assert bridge.verify_transaction(tx) is True, \
+            "Transazione con firma ECDSA valida deve essere verificata"
+
+    def test_verify_with_invalid_ecdsa_signature(self):
+        """
+        Verifica che una transazione con firma ECDSA invalida venga rifiutata
+        quando la chiave pubblica è registrata nel bridge.
+        """
+        bridge = ReconciliationBridge()
+        se = SecureElementSimulator()
+
+        pub_key = se.get_certificate()
+        bridge.register_public_key("alice_se_001", pub_key)
+
+        tx = {
+            "sender_id": "alice_se_001",
+            "receiver_id": "bob_se_002",
+            "amount": 2500,
+            "counter": 1,
+            "signature": "deadbeefcafe1234",  # firma fasulla
+            "timestamp": time.time(),
+        }
+
+        assert bridge.verify_transaction(tx) is False, \
+            "Transazione con firma ECDSA invalida deve essere rifiutata"
+
+    def test_verify_without_registry_accepts_any_signature(self):
+        """
+        Verifica la retrocompatibilità: senza registry, qualsiasi firma
+        non vuota è accettata (comportamento precedente).
+        """
+        bridge = ReconciliationBridge()
+
+        tx = {
+            "sender_id": "alice_se_001",
+            "receiver_id": "bob_se_002",
+            "amount": 2500,
+            "counter": 1,
+            "signature": "qualsiasi_stringa_non_vuota",
+            "timestamp": time.time(),
+        }
+
+        assert bridge.verify_transaction(tx) is True, \
+            "Senza registry, qualsiasi firma non vuota deve essere accettata"
+

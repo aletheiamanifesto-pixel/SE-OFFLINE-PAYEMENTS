@@ -1,0 +1,17 @@
+LICENSE
+README.md
+pyproject.toml
+aegis_offline_payments.egg-info/PKG-INFO
+aegis_offline_payments.egg-info/SOURCES.txt
+aegis_offline_payments.egg-info/dependency_links.txt
+aegis_offline_payments.egg-info/requires.txt
+aegis_offline_payments.egg-info/top_level.txt
+bridge/__init__.py
+bridge/reconciliation_bridge.py
+examples/__init__.py
+examples/scenario_caffe.py
+host_app/__init__.py
+host_app/python/__init__.py
+host_app/python/payment_flow.py
+host_app/python/se_simulator.py
+tests/test_payment_flow.py

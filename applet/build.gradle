@@ -1,0 +1,64 @@
+/*
+ * build.gradle — Build system per l'Applet JavaCard AEGIS Offline Digital Euro
+ *
+ * Per compilare questa applet è necessario il JavaCard Development Kit (SDK).
+ * Vedere applet/README.md per le istruzioni di installazione del SDK.
+ *
+ * Utilizzo:
+ *   gradle compileJava       — Compila le sorgenti Java
+ *   gradle buildCap          — Crea il file .cap installabile su JavaCard (richiede javacard-gradle-plugin)
+ */
+
+plugins {
+    id 'java'
+}
+
+group = 'ecb.deuro.offline'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    /*
+     * JavaCard API — NON disponibile su Maven Central.
+     * È necessario scaricare il JavaCard Development Kit da Oracle e aggiungere
+     * il file api_export_files/api.jar come dipendenza locale.
+     *
+     * Dopo aver scaricato il SDK (vedi README.md), decommentare la riga sottostante
+     * e specificare il percorso corretto:
+     *
+     * compileOnly files('/path/to/javacard-sdk/api_export_files/api.jar')
+     */
+}
+
+/*
+ * Task per creare il file .cap (JavaCard Applet Package).
+ * Richiede il plugin gradle-javacard o gli strumenti del SDK JavaCard.
+ * Vedere README.md per i dettagli.
+ */
+task buildCap(dependsOn: compileJava) {
+    group = 'JavaCard'
+    description = 'Crea il file .cap installabile su una JavaCard reale (richiede JavaCard SDK)'
+    doLast {
+        println 'Per creare il file .cap, esegui lo script converter del JavaCard SDK:'
+        println '  converter -classdir build/classes/java/main \\'
+        println '            -exportpath /path/to/sdk/api_export_files \\'
+        println '            -applet 0xF0:0x41:0x45:0x47:0x49:0x53:0x00 ecb.deuro.offline.OfflineDigitalEuroApplet \\'
+        println '            -package ecb.deuro.offline 1.0'
+    }
+}

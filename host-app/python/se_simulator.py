@@ -22,7 +22,6 @@ import struct
 import os
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from cryptography.exceptions import InvalidSignature
 
 
@@ -35,8 +34,15 @@ from cryptography.exceptions import InvalidSignature
 SW_OK = 0x9000                    # Operazione riuscita — la cassaforte ha eseguito l'ordine
 SW_WRONG_PIN = 0x6983             # PIN errato — come digitare il codice sbagliato al bancomat
 SW_INSUFFICIENT_BALANCE = 0x6985  # Saldo insufficiente — non puoi spendere più di quel che hai
+SW_MAX_BALANCE_EXCEEDED = 0x6984  # Saldo massimo superato — non puoi caricare oltre il limite
+SW_CONDITIONS_NOT_SATISFIED = 0x6986  # Condizioni non soddisfatte — applet non selezionata
 SW_WRONG_LENGTH = 0x6700         # Lunghezza dati errata — il bigliettino ha dimensioni sbagliate
 SW_INS_NOT_SUPPORTED = 0x6D00   # Istruzione sconosciuta — la cassaforte non capisce la richiesta
+
+# =============================================================================
+# LIMITI
+# =============================================================================
+MAX_BALANCE = 1_000_000_00  # Saldo massimo: 10.000,00€ in centesimi
 
 # =============================================================================
 # CODICI ISTRUZIONE (INS bytes)
@@ -167,6 +173,10 @@ class SecureElementSimulator:
         if cla != 0x80:
             return self._make_response(b'', SW_INS_NOT_SUPPORTED)
 
+        # Tutti i comandi proprietari richiedono che l'applet sia stata selezionata
+        if not self._selected:
+            return self._make_response(b'', SW_CONDITIONS_NOT_SATISFIED)
+
         # --- Dispatch delle istruzioni proprietarie ---
         if ins == INS_GET_BALANCE:
             return self._handle_get_balance()
@@ -252,6 +262,8 @@ class SecureElementSimulator:
             True se l'accredito è riuscito, False se importo non valido
         """
         if amount <= 0:
+            return False
+        if self._balance + amount > MAX_BALANCE:
             return False
         self._balance += amount
         return True
@@ -380,6 +392,8 @@ class SecureElementSimulator:
             return self._make_response(b'', SW_WRONG_LENGTH)
 
         amount = struct.unpack('>I', data[:4])[0]
+        if self._balance + amount > MAX_BALANCE:
+            return self._make_response(b'', SW_MAX_BALANCE_EXCEEDED)
         self._balance += amount
 
         new_balance_bytes = struct.pack('>I', self._balance)
