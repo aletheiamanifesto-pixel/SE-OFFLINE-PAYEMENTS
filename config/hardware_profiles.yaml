@@ -1,0 +1,74 @@
+# hardware_profiles.yaml — Profili di configurazione hardware per SE-OFFLINE-PAYMENTS
+#
+# Questo file definisce i profili di configurazione per i diversi ambienti
+# di utilizzo del Secure Element. Ogni profilo specifica:
+#   - backend: quale implementazione usare (simulator, pcscard, android_nfc)
+#   - parametri specifici: dipendono dal backend scelto
+#
+# UTILIZZO:
+#   import yaml
+#   from host_app.python.se_factory import create_from_profile
+#
+#   with open("config/hardware_profiles.yaml") as f:
+#       config = yaml.safe_load(f)
+#
+#   se = create_from_profile(config["profiles"]["development"])
+#
+# PROFILI DISPONIBILI:
+#   development  — simulatore in-memory per sviluppo locale
+#   test_acr122u — smart card fisica con lettore ACR122U
+#   test_android — smartphone Android con NFC
+
+profiles:
+
+  # ─────────────────────────────────────────────────────────────
+  # DEVELOPMENT — Simulatore in-memory
+  # Usato per sviluppo locale, test unitari, CI/CD.
+  # Non richiede hardware. Veloce e deterministico.
+  # ─────────────────────────────────────────────────────────────
+  development:
+    backend: simulator
+    initial_balance: 10000   # 100.00€ in centesimi
+
+  # ─────────────────────────────────────────────────────────────
+  # TEST_ACR122U — Smart card JCOP4 con lettore ACR122U
+  # Hardware minimo per sviluppo embedded.
+  # Richiede: ACR122U collegato, applet installato sulla carta.
+  # ─────────────────────────────────────────────────────────────
+  test_acr122u:
+    backend: pcscard
+    reader_name: "ACS ACR122U"          # Nome del lettore (substr match)
+    aid: "D2760000604101"            # AID dell'applet AEGIS (7 byte, hex)
+    timeout_ms: 5000                 # Timeout NFC in millisecondi
+    retries: 3                       # Tentativi in caso di errori transienti
+
+  # ─────────────────────────────────────────────────────────────
+  # TEST_ANDROID — Smartphone Android via NFC
+  # Per sviluppo mobile. Richiede app host Android con NFC attivo.
+  # Il backend "android_nfc" richiede implementazione specifica.
+  # ─────────────────────────────────────────────────────────────
+  test_android:
+    backend: android_nfc
+    aid: "D2760000604101"            # AID dell'applet AEGIS
+    min_sdk: 23                      # Android 6.0 Marshmallow minimo
+    timeout_ms: 8000                 # Timeout più lungo per Android (maggiore latenza)
+    retries: 2
+
+  # ─────────────────────────────────────────────────────────────
+  # STAGING — Ambiente di pre-produzione con hardware reale
+  # Come test_acr122u ma con parametri più conservativi.
+  # ─────────────────────────────────────────────────────────────
+  staging:
+    backend: pcscard
+    aid: "D2760000604101"
+    timeout_ms: 3000
+    retries: 5
+    reader_index: 0
+
+  # ─────────────────────────────────────────────────────────────
+  # CI — Integrazione continua (solo simulatore)
+  # Profilo leggero per pipeline CI/CD senza hardware.
+  # ─────────────────────────────────────────────────────────────
+  ci:
+    backend: simulator
+    initial_balance: 50000           # 500.00€ per test con importi più grandi
