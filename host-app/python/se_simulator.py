@@ -1,0 +1,505 @@
+"""
+se_simulator.py — Simulatore di Secure Element (SE) per pagamenti offline
+
+Immagina il Secure Element come una CASSAFORTE DIGITALE miniaturizzata,
+saldata direttamente nel chip NFC del tuo telefono o della tua carta.
+Dentro questa cassaforte ci sono:
+  - Il tuo PORTAFOGLIO (saldo in centesimi di AEGIS Euro)
+  - Un CONTATORE MONOTÒNICO (come il contachilometri di un'auto: sale e non torna mai indietro)
+  - Una COPPIA DI CHIAVI CRITTOGRAFICHE (come una firma autografa digitale impossibile da falsificare)
+
+Questo modulo simula tutto ciò in Python, usando crittografia ECDSA reale
+(curva secp256r1, la stessa usata nelle carte bancarie e nei passaporti elettronici).
+
+Ogni operazione avviene tramite comandi APDU (Application Protocol Data Unit),
+lo stesso protocollo che il tuo telefono usa per parlare con la SIM o con la carta NFC.
+Pensa agli APDU come a dei "bigliettini" che il telefono infila nella fessura della cassaforte:
+  - Il bigliettino dice cosa fare (prelevare, versare, firmare...)
+  - La cassaforte risponde con il risultato e un codice di stato (OK, errore, ecc.)
+"""
+
+import struct
+import os
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+from cryptography.exceptions import InvalidSignature
+
+
+# =============================================================================
+# CODICI DI STATO (Status Words)
+# Sono come i codici HTTP, ma per le smart card.
+# 0x9000 = "Tutto OK" (come 200 OK nel web)
+# 0x6985 = "Saldo insufficiente" (come quando il bancomat ti dice "fondi non disponibili")
+# =============================================================================
+SW_OK = 0x9000                    # Operazione riuscita — la cassaforte ha eseguito l'ordine
+SW_WRONG_PIN = 0x6983             # PIN errato — come digitare il codice sbagliato al bancomat
+SW_INSUFFICIENT_BALANCE = 0x6985  # Saldo insufficiente — non puoi spendere più di quel che hai
+SW_WRONG_LENGTH = 0x6700         # Lunghezza dati errata — il bigliettino ha dimensioni sbagliate
+SW_INS_NOT_SUPPORTED = 0x6D00   # Istruzione sconosciuta — la cassaforte non capisce la richiesta
+
+# =============================================================================
+# CODICI ISTRUZIONE (INS bytes)
+# Ogni comando APDU ha un "codice operazione" che dice alla cassaforte cosa fare.
+# È come il numero del servizio allo sportello della banca:
+#   "Sportello 0x10 = consulta saldo", "Sportello 0x20 = prelievo", ecc.
+# =============================================================================
+INS_SELECT = 0xA4          # Seleziona l'applet (come scegliere quale app aprire sulla carta)
+INS_GET_BALANCE = 0x10     # Leggi il saldo — "Quanto ho nel portafoglio?"
+INS_DEBIT = 0x20           # Addebito — "Togli questi soldi dal mio conto"
+INS_CREDIT = 0x30          # Accredito — "Aggiungi questi soldi al mio conto"
+INS_GET_COUNTER = 0x40     # Leggi contatore — "Quante transazioni ho fatto?"
+INS_SIGN = 0x50            # Firma digitale — "Metti la tua firma su questo documento"
+INS_GET_CERTIFICATE = 0x60  # Ottieni certificato — "Mostrami la tua carta d'identità digitale"
+INS_MUTUAL_AUTH = 0x70     # Autenticazione reciproca — "Dimostriamo entrambi chi siamo"
+
+
+class SecureElementSimulator:
+    """
+    Simulatore di Secure Element per pagamenti offline AEGIS.
+
+    Questa classe rappresenta un chip sicuro virtuale. Nel mondo reale,
+    un Secure Element è un microprocessore tamper-resistant (resistente
+    alle manomissioni) grande quanto un granello di riso, ma capace di:
+      - Conservare segreti (chiavi private) anche sotto attacco fisico
+      - Eseguire operazioni crittografiche senza mai esporre la chiave
+      - Mantenere un contatore che non può essere riportato indietro
+
+    È come una cassaforte con un notaio dentro: custodisce i tuoi soldi,
+    firma i documenti per tuo conto, e tiene un registro inalterabile.
+    """
+
+    def __init__(self, initial_balance: int = 10000):
+        """
+        Inizializza il Secure Element.
+
+        Parametri:
+            initial_balance: saldo iniziale in CENTESIMI (10000 = 100.00€)
+                            Come quando carichi una carta prepagata per la prima volta.
+
+        Durante l'inizializzazione avvengono tre cose fondamentali:
+        1. Si imposta il saldo iniziale (come caricare la carta dal tabaccaio)
+        2. Si azzera il contatore monotònico (il "contachilometri" parte da zero)
+        3. Si genera la coppia di chiavi ECDSA (come creare la tua firma digitale unica)
+        """
+        # --- SALDO: il denaro digitale dentro la cassaforte ---
+        # Usiamo centesimi per evitare errori con i decimali.
+        # 10000 centesimi = 100.00 euro, proprio come nella realtà
+        # le macchinette contano in centesimi, non in euro.
+        self._balance = initial_balance
+
+        # --- CONTATORE MONOTÒNICO: il contachilometri delle transazioni ---
+        # Come il contachilometri di un'auto: può solo salire.
+        # Serve a impedire i "replay attack" (attacchi di ripetizione):
+        # se qualcuno registra una transazione e prova a ri-inviarla,
+        # il contatore sarà diverso e la frode verrà scoperta.
+        self._counter = 0
+
+        # --- CHIAVI CRITTOGRAFICHE: la firma autografa digitale ---
+        # Generiamo una coppia di chiavi ECDSA sulla curva secp256r1
+        # (detta anche P-256 o prime256v1). È lo standard mondiale
+        # per le firme digitali nelle smart card.
+        #
+        # La chiave privata è come il tuo modo unico di fare la firma:
+        # solo tu puoi firmare, ma tutti possono verificare che sia tua.
+        # La chiave pubblica è come la tua firma depositata in banca:
+        # chiunque può confrontarla per verificare l'autenticità.
+        self._private_key = ec.generate_private_key(ec.SECP256R1())
+        self._public_key = self._private_key.public_key()
+
+        # --- FLAG DI SELEZIONE: l'applet è stata attivata? ---
+        # Prima di usare la carta, bisogna "selezionare" l'applicazione,
+        # come quando scegli "Pagamento" sul POS invece di "Ricarica".
+        self._selected = False
+
+    # =========================================================================
+    # METODI APDU — La "fessura della cassaforte" per i bigliettini
+    # =========================================================================
+
+    def process_apdu(self, apdu_bytes: bytes) -> bytes:
+        """
+        Elabora un comando APDU e restituisce la risposta.
+
+        Un APDU (Application Protocol Data Unit) è il "linguaggio" con cui
+        il mondo esterno comunica con il Secure Element. È come un modulo
+        da compilare allo sportello della banca:
+
+        Struttura del comando APDU:
+        ┌─────┬─────┬─────┬─────┬─────┬──────────┐
+        │ CLA │ INS │ P1  │ P2  │ Lc  │  DATA    │
+        └─────┴─────┴─────┴─────┴─────┴──────────┘
+          │      │     │     │     │       │
+          │      │     │     │     │       └─ I dati veri e propri (importo, messaggio da firmare...)
+          │      │     │     │     └───────── Lunghezza dei dati (quanti byte seguono)
+          │      │     │     └─────────────── Parametro 2 (dettagli aggiuntivi)
+          │      │     └───────────────────── Parametro 1 (dettagli aggiuntivi)
+          │      └─────────────────────────── Istruzione (cosa vuoi fare: prelevare, firmare...)
+          └────────────────────────────────── Classe (0x00=standard ISO, 0x80=proprietario)
+
+        Parametri:
+            apdu_bytes: i byte del comando APDU (minimo 4: CLA, INS, P1, P2)
+
+        Ritorna:
+            bytes contenenti [dati_risposta] + [SW1, SW2] (status word a 2 byte)
+        """
+        # --- Controllo lunghezza minima ---
+        # Un APDU valido ha almeno 4 byte (CLA + INS + P1 + P2).
+        # È come controllare che il modulo della banca abbia almeno
+        # i campi obbligatori compilati.
+        if len(apdu_bytes) < 4:
+            return self._make_response(b'', SW_WRONG_LENGTH)
+
+        # --- Estrazione dei campi dell'APDU ---
+        cla = apdu_bytes[0]   # Classe: "tipo di sportello"
+        ins = apdu_bytes[1]   # Istruzione: "cosa vuoi fare"
+        # p1 e p2 sono i parametri ausiliari (li usiamo solo in alcuni comandi)
+        data = apdu_bytes[5:] if len(apdu_bytes) > 5 else b''  # Dati allegati
+
+        # --- Smistamento comandi ---
+        # Come lo smistamento allo sportello: in base al numero del servizio
+        # richiesto, ti mando all'impiegato giusto.
+
+        # SELEZIONE APPLET (CLA=0x00 è lo standard ISO 7816)
+        if cla == 0x00 and ins == INS_SELECT:
+            return self._handle_select()
+
+        # Tutti gli altri comandi richiedono CLA=0x80 (comandi proprietari AEGIS)
+        if cla != 0x80:
+            return self._make_response(b'', SW_INS_NOT_SUPPORTED)
+
+        # --- Dispatch delle istruzioni proprietarie ---
+        if ins == INS_GET_BALANCE:
+            return self._handle_get_balance()
+        elif ins == INS_DEBIT:
+            return self._handle_debit(data)
+        elif ins == INS_CREDIT:
+            return self._handle_credit(data)
+        elif ins == INS_GET_COUNTER:
+            return self._handle_get_counter()
+        elif ins == INS_SIGN:
+            return self._handle_sign(data)
+        elif ins == INS_GET_CERTIFICATE:
+            return self._handle_get_certificate()
+        elif ins == INS_MUTUAL_AUTH:
+            return self._handle_mutual_auth(data)
+        else:
+            # Istruzione non riconosciuta — come chiedere "voglio un gelato"
+            # allo sportello della banca: non è un servizio disponibile.
+            return self._make_response(b'', SW_INS_NOT_SUPPORTED)
+
+    # =========================================================================
+    # METODI PUBBLICI DI ALTO LIVELLO
+    # Questi metodi sono "scorciatoie" per chi non vuole costruire gli APDU a mano.
+    # Sono come usare l'app della banca invece di andare allo sportello.
+    # =========================================================================
+
+    def get_balance(self) -> int:
+        """
+        Restituisce il saldo corrente in centesimi.
+
+        Come guardare il saldo sul display del bancomat:
+        se ritorna 7500, significa 75.00€.
+        """
+        return self._balance
+
+    def get_certificate(self) -> bytes:
+        """
+        Restituisce la chiave pubblica in formato "uncompressed point".
+
+        La chiave pubblica è come l'IBAN: puoi darla a chiunque in sicurezza,
+        serve per verificare che le tue firme siano autentiche.
+
+        Il formato è il punto non compresso sulla curva ellittica:
+        0x04 || coordinata_X (32 byte) || coordinata_Y (32 byte) = 65 byte totali
+        """
+        return self._public_key.public_bytes(
+            serialization.Encoding.X962,
+            serialization.PublicFormat.UncompressedPoint
+        )
+
+    def debit(self, amount: int) -> bool:
+        """
+        Sottrae 'amount' centesimi dal saldo.
+
+        Come pagare in contanti: togli le monete dal portafoglio.
+        Se provi a pagare 50€ ma ne hai solo 30€, l'operazione fallisce.
+
+        Parametri:
+            amount: importo da addebitare in centesimi (deve essere > 0)
+
+        Ritorna:
+            True se l'addebito è riuscito, False se saldo insufficiente
+        """
+        if amount <= 0 or amount > self._balance:
+            return False
+        self._balance -= amount
+        # Ogni addebito incrementa il contatore, come un timbro sul libretto
+        self._counter += 1
+        return True
+
+    def credit(self, amount: int) -> bool:
+        """
+        Aggiunge 'amount' centesimi al saldo.
+
+        Come ricevere un pagamento: le monete entrano nel portafoglio.
+        A differenza del prelievo, qui non c'è un limite massimo
+        (nel mondo reale ci sarebbero controlli antiriciclaggio).
+
+        Parametri:
+            amount: importo da accreditare in centesimi (deve essere > 0)
+
+        Ritorna:
+            True se l'accredito è riuscito, False se importo non valido
+        """
+        if amount <= 0:
+            return False
+        self._balance += amount
+        return True
+
+    def get_counter(self) -> int:
+        """
+        Restituisce il valore corrente del contatore monotònico.
+
+        Il contatore è come il numero di scontrino al supermercato:
+        ogni transazione ne prende uno nuovo, e non puoi tornare indietro.
+        Questo impedisce che qualcuno "ripeta" una transazione già fatta
+        (cosiddetto "replay attack").
+        """
+        return self._counter
+
+    def sign_transaction(self, data: bytes) -> bytes:
+        """
+        Firma digitalmente i dati con la chiave privata ECDSA.
+
+        Immagina di firmare un assegno: la tua firma garantisce che
+        SEI DAVVERO TU ad autorizzare quel pagamento. Nessun altro
+        può replicare la tua firma, ma chiunque può verificarla
+        confrontandola con quella depositata in banca.
+
+        Parametri:
+            data: i byte da firmare (tipicamente: importo + contatore + timestamp)
+
+        Ritorna:
+            La firma digitale in formato DER (byte grezzi)
+        """
+        signature = self._private_key.sign(data, ec.ECDSA(hashes.SHA256()))
+        return signature
+
+    def verify_signature(self, data: bytes, signature: bytes, public_key: bytes) -> bool:
+        """
+        Verifica che una firma digitale sia autentica.
+
+        Come quando la banca controlla la firma sull'assegno:
+        confronta la firma apposta con quella depositata dal cliente.
+        Se corrispondono, l'assegno è valido; altrimenti, è un falso.
+
+        Parametri:
+            data: i dati originali che erano stati firmati
+            signature: la firma da verificare
+            public_key: la chiave pubblica del firmatario (formato uncompressed point)
+
+        Ritorna:
+            True se la firma è valida, False se è falsa o corrotta
+        """
+        try:
+            # Ricostruiamo l'oggetto chiave pubblica dai byte grezzi
+            # È come recuperare la firma depositata dall'archivio della banca
+            pub_key = ec.EllipticCurvePublicKey.from_encoded_point(
+                ec.SECP256R1(), public_key
+            )
+            pub_key.verify(signature, data, ec.ECDSA(hashes.SHA256()))
+            return True
+        except (InvalidSignature, Exception):
+            return False
+
+    # =========================================================================
+    # GESTORI INTERNI DEI COMANDI APDU
+    # Questi metodi sono i veri "impiegati allo sportello":
+    # ognuno gestisce un tipo specifico di richiesta.
+    # =========================================================================
+
+    def _handle_select(self) -> bytes:
+        """
+        Gestisce il comando SELECT (INS=0xA4).
+
+        Come inserire la carta nel lettore e scegliere "Pagamento AEGIS":
+        attiva l'applet di pagamento sul Secure Element.
+        Fino a quando non fai SELECT, la cassaforte non risponde agli altri comandi.
+        """
+        self._selected = True
+        return self._make_response(b'', SW_OK)
+
+    def _handle_get_balance(self) -> bytes:
+        """
+        Gestisce il comando GET_BALANCE (INS=0x10).
+
+        Restituisce il saldo come 4 byte big-endian (network byte order).
+        Esempio: 10000 (= 100.00€) diventa 0x00 0x00 0x27 0x10
+
+        È come premere "Visualizza saldo" al bancomat.
+        """
+        balance_bytes = struct.pack('>I', self._balance)
+        return self._make_response(balance_bytes, SW_OK)
+
+    def _handle_debit(self, data: bytes) -> bytes:
+        """
+        Gestisce il comando DEBIT (INS=0x20).
+
+        Aspetta 4 byte big-endian che rappresentano l'importo in centesimi.
+        Come dire al cassiere: "Preleva questa somma dal mio conto".
+
+        Controlli:
+        1. I dati devono essere esattamente 4 byte (altrimenti → WRONG_LENGTH)
+        2. Il saldo deve essere sufficiente (altrimenti → INSUFFICIENT_BALANCE)
+        """
+        if len(data) < 4:
+            return self._make_response(b'', SW_WRONG_LENGTH)
+
+        amount = struct.unpack('>I', data[:4])[0]
+
+        if amount > self._balance:
+            # Come quando provi a prelevare 200€ ma ne hai solo 150€:
+            # il bancomat rifiuta l'operazione.
+            return self._make_response(b'', SW_INSUFFICIENT_BALANCE)
+
+        self._balance -= amount
+        self._counter += 1  # Ogni prelievo fa scattare il contachilometri
+
+        # Rispondiamo con il nuovo saldo, così il terminale può aggiornare il display
+        new_balance_bytes = struct.pack('>I', self._balance)
+        return self._make_response(new_balance_bytes, SW_OK)
+
+    def _handle_credit(self, data: bytes) -> bytes:
+        """
+        Gestisce il comando CREDIT (INS=0x30).
+
+        Come versare contanti al bancomat: i soldi entrano nel conto.
+        Aspetta 4 byte big-endian con l'importo da accreditare.
+        """
+        if len(data) < 4:
+            return self._make_response(b'', SW_WRONG_LENGTH)
+
+        amount = struct.unpack('>I', data[:4])[0]
+        self._balance += amount
+
+        new_balance_bytes = struct.pack('>I', self._balance)
+        return self._make_response(new_balance_bytes, SW_OK)
+
+    def _handle_get_counter(self) -> bytes:
+        """
+        Gestisce il comando GET_COUNTER (INS=0x40).
+
+        Restituisce il contatore monotònico come 4 byte big-endian.
+        È come chiedere: "Quante transazioni ha fatto questa carta?"
+        """
+        counter_bytes = struct.pack('>I', self._counter)
+        return self._make_response(counter_bytes, SW_OK)
+
+    def _handle_sign(self, data: bytes) -> bytes:
+        """
+        Gestisce il comando SIGN (INS=0x50).
+
+        Firma i dati ricevuti con la chiave privata ECDSA.
+        È come quando il notaio mette il timbro e la firma su un atto:
+        da quel momento, il documento è autenticato e non ripudiabile.
+
+        La firma viene calcolata su SHA-256(data), usando la curva secp256r1.
+        """
+        if len(data) == 0:
+            return self._make_response(b'', SW_WRONG_LENGTH)
+
+        signature = self._private_key.sign(data, ec.ECDSA(hashes.SHA256()))
+        return self._make_response(signature, SW_OK)
+
+    def _handle_get_certificate(self) -> bytes:
+        """
+        Gestisce il comando GET_CERTIFICATE (INS=0x60).
+
+        Restituisce la chiave pubblica nel formato "uncompressed point" (65 byte):
+        0x04 || X (32 byte) || Y (32 byte)
+
+        È come mostrare la carta d'identità: prova chi sei senza rivelare
+        i tuoi segreti (la chiave privata resta sempre dentro la cassaforte).
+        """
+        pub_bytes = self._public_key.public_bytes(
+            serialization.Encoding.X962,
+            serialization.PublicFormat.UncompressedPoint
+        )
+        return self._make_response(pub_bytes, SW_OK)
+
+    def _handle_mutual_auth(self, data: bytes) -> bytes:
+        """
+        Gestisce il comando MUTUAL_AUTH (INS=0x70).
+
+        L'autenticazione reciproca è come quando due spie si incontrano
+        e ognuna deve dimostrare all'altra di essere chi dice di essere.
+
+        Flusso semplificato:
+        1. Il terminale invia una "sfida" (challenge) — un numero casuale
+        2. Il SE firma la sfida con la sua chiave privata
+        3. Il terminale verifica la firma con la chiave pubblica del SE
+
+        In questa versione simulata, il SE firma la sfida ricevuta
+        e la restituisce come prova della propria identità.
+        """
+        if len(data) == 0:
+            # Se non c'è una sfida, generiamo noi un challenge casuale
+            # (nella realtà sarebbe un errore di protocollo)
+            challenge = os.urandom(32)
+        else:
+            challenge = data
+
+        # Firmiamo la sfida per dimostrare la nostra identità
+        signature = self._private_key.sign(challenge, ec.ECDSA(hashes.SHA256()))
+
+        # Rispondiamo con la sfida originale + la firma
+        response_data = challenge + signature
+        return self._make_response(response_data, SW_OK)
+
+    # =========================================================================
+    # UTILITÀ INTERNE
+    # =========================================================================
+
+    @staticmethod
+    def _make_response(data: bytes, status_word: int) -> bytes:
+        """
+        Costruisce la risposta APDU: dati + status word (2 byte).
+
+        La status word è come il codice di risposta HTTP:
+          0x9000 = "200 OK, tutto bene"
+          0x6985 = "402 Payment Required, saldo insufficiente"
+          0x6D00 = "404 Not Found, comando sconosciuto"
+
+        Formato risposta: [DATI...] [SW1] [SW2]
+        """
+        sw1 = (status_word >> 8) & 0xFF
+        sw2 = status_word & 0xFF
+        return data + bytes([sw1, sw2])
+
+    # =========================================================================
+    # UTILITÀ PER COSTRUIRE COMANDI APDU
+    # Metodi statici di comodità, come avere un "compilatore di moduli"
+    # che prepara i bigliettini nel formato corretto per la cassaforte.
+    # =========================================================================
+
+    @staticmethod
+    def build_apdu(cla: int, ins: int, p1: int = 0x00, p2: int = 0x00,
+                   data: bytes = b'') -> bytes:
+        """
+        Costruisce un comando APDU dai suoi componenti.
+
+        Parametri:
+            cla: classe del comando (0x00=ISO, 0x80=proprietario)
+            ins: codice istruzione
+            p1, p2: parametri ausiliari
+            data: dati opzionali da allegare
+
+        Ritorna:
+            bytes pronti per process_apdu()
+
+        Esempio:
+            # Comando DEBIT di 25.00€ (2500 centesimi)
+            apdu = SecureElementSimulator.build_apdu(0x80, 0x20, data=struct.pack('>I', 2500))
+        """
+        lc = len(data)
+        return bytes([cla, ins, p1, p2, lc]) + data

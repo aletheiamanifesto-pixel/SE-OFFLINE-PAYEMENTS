@@ -1,0 +1,30 @@
+name: CI — AEGIS Offline Payments
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: "🧪 Test Python SE Simulator"
+
+    steps:
+      - name: 📥 Checkout codice
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 📦 Installa dipendenze
+        run: pip install -r requirements.txt
+
+      - name: 🧪 Esegui test con pytest
+        run: python -m pytest tests/ -v
+
+      - name: 🚀 Esegui dimostrazione pagamento
+        run: python host-app/python/payment_flow.py
