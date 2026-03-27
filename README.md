@@ -21,6 +21,12 @@ DOPO IL PAGAMENTO DI 25€:
 Alice: 75€, Cnt 43           Bob: 75€, Cnt 19
 ```
 
+## Contribuire
+
+Contribuzioni benvenute! Leggi [`CONTRIBUTING.md`](CONTRIBUTING.md) per sapere come iniziare.
+
+Per segnalare vulnerabilità di sicurezza, segui le istruzioni in [`SECURITY.md`](SECURITY.md) — **non aprire issue pubbliche**.
+
 ## Licenza
 
-MIT License
+[MIT License](LICENSE) — Copyright (c) 2026 aletheiamanifesto-pixel
