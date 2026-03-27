@@ -21,7 +21,7 @@ jobs:
           python-version: "3.11"
 
       - name: 📦 Installa dipendenze
-        run: pip install -r requirements.txt
+        run: pip install -e ".[dev]"
 
       - name: 🧪 Esegui test con pytest
         run: python -m pytest tests/ -v

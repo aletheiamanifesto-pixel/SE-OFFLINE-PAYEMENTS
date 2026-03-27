@@ -13,13 +13,8 @@ dal primo contatto NFC fino alla ricevuta firmata digitalmente.
 Esecuzione: python examples/scenario_caffe.py
 """
 
-import sys
-import os
 import struct
 import time
-
-# Aggiungiamo il percorso del progetto per permettere gli import
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from host_app.python.se_simulator import SecureElementSimulator
 from bridge.reconciliation_bridge import ReconciliationBridge

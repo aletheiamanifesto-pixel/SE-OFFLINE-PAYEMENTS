@@ -20,11 +20,6 @@ La riconciliazione con la blockchain AEGIS avviene dopo, quando c'è connessione
 
 import struct
 import time
-import sys
-import os
-
-# Aggiungiamo il percorso del progetto per permettere gli import
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from host_app.python.se_simulator import SecureElementSimulator
 
