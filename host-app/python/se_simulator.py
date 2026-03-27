@@ -25,6 +25,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from cryptography.exceptions import InvalidSignature
 
+from .se_interface import SecureElementInterface
+
 
 # =============================================================================
 # CODICI DI STATO (Status Words)
@@ -54,7 +56,7 @@ INS_GET_CERTIFICATE = 0x60  # Ottieni certificato — "Mostrami la tua carta d'i
 INS_MUTUAL_AUTH = 0x70     # Autenticazione reciproca — "Dimostriamo entrambi chi siamo"
 
 
-class SecureElementSimulator:
+class SecureElementSimulator(SecureElementInterface):
     """
     Simulatore di Secure Element per pagamenti offline AEGIS.
 

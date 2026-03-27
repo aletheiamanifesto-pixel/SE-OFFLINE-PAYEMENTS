@@ -254,4 +254,112 @@ Soluzioni:
 
 ---
 
+## Usare il Codice con Hardware Reale
+
+### Switchare tra Simulatore e Hardware con la Factory
+
+Il modo più semplice per cambiare backend è usare la factory `create_secure_element`.
+Basta cambiare il parametro `backend` — il resto del codice rimane identico.
+
+```python
+from host_app.python.se_factory import create_secure_element
+
+# In sviluppo — nessun hardware necessario
+se = create_secure_element("simulator", initial_balance=10000)
+
+# In produzione — smart card fisica con ACR122U
+se = create_secure_element("pcscard", reader_name="ACS ACR122U", timeout_ms=5000)
+
+# Entrambi si usano allo stesso modo grazie all'interfaccia comune
+saldo = se.get_balance()
+print(f"Saldo: {saldo / 100:.2f}€")
+```
+
+### Usare i Profili Hardware
+
+I profili di configurazione in `config/hardware_profiles.yaml` permettono
+di definire i parametri una volta sola e riutilizzarli in tutto il progetto.
+
+```python
+import yaml
+from host_app.python.se_factory import create_from_profile
+
+# Carica i profili dal file di configurazione
+with open("config/hardware_profiles.yaml") as f:
+    config = yaml.safe_load(f)
+
+# Seleziona il profilo in base all'ambiente
+profilo_nome = os.environ.get("SE_PROFILE", "development")
+profilo = config["profiles"][profilo_nome]
+
+# Crea il Secure Element con i parametri del profilo
+se = create_from_profile(profilo)
+print(f"Backend attivo: {profilo['backend']}")
+```
+
+Profili disponibili:
+- `development` — simulatore Python (per sviluppo locale)
+- `test_acr122u` — smart card fisica con lettore ACR122U
+- `test_android` — smartphone Android con NFC
+- `staging` — pre-produzione con hardware reale
+- `ci` — integrazione continua senza hardware
+
+### Esempio Completo: Pagamento su Carta Reale
+
+```python
+import yaml
+from host_app.python.se_factory import create_from_profile
+from host_app.python.resilient_payment import ResilientPaymentFlow
+
+# Carica la configurazione per hardware reale
+with open("config/hardware_profiles.yaml") as f:
+    config = yaml.safe_load(f)
+
+profilo_acr122u = config["profiles"]["test_acr122u"]
+
+# Crea i due Secure Element (pagatore e ricevente)
+# In un caso reale, sarebbero due carte fisiche diverse
+pagatore = create_from_profile(profilo_acr122u)
+ricevente = create_from_profile(profilo_acr122u)
+
+# Usa il flusso resiliente con retry automatico e rollback
+flusso = ResilientPaymentFlow(max_retries=3)
+
+try:
+    importo = 2500  # 25.00€
+    successo = flusso.esegui_pagamento(pagatore, ricevente, importo=importo)
+    
+    if successo:
+        print(f"✅ Pagamento di {importo/100:.2f}€ completato!")
+        print(f"   Saldo pagatore:  {pagatore.get_balance()/100:.2f}€")
+        print(f"   Saldo ricevente: {ricevente.get_balance()/100:.2f}€")
+    else:
+        print("❌ Pagamento non riuscito (saldo insufficiente o errore)")
+
+except TornTransactionError as e:
+    print(f"⚠️  TORN TRANSACTION: {e}")
+    print(f"   Importo coinvolto: {e.amount/100:.2f}€")
+    print(f"   Debit avvenuto: {e.payer_debited}")
+    print(f"   Credit avvenuto: {e.receiver_credited}")
+    print("   Avvia la riconciliazione manuale!")
+```
+
+### Eseguire i Test Hardware
+
+I test hardware sono marcati con `@pytest.mark.hardware` e vengono
+automaticamente saltati se il lettore non è collegato.
+
+```bash
+# Esegui tutti i test (i test hardware vengono saltati se non c'è lettore)
+pytest tests/ -v
+
+# Esegui SOLO i test hardware (richiede ACR122U + smart card)
+pytest tests/ -v -m hardware
+
+# Esegui SOLO i test dell'architettura (nessun hardware)
+pytest tests/test_hardware_integration.py -v -m "not hardware"
+```
+
+---
+
 *Documento parte del progetto SE-OFFLINE-PAYMENTS — AEGIS Protocol*
