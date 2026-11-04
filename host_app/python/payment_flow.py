@@ -19,7 +19,12 @@ La riconciliazione con la blockchain AEGIS avviene dopo, quando c'è connessione
 """
 
 import struct
+import sys
 import time
+from pathlib import Path
+
+# Permette di lanciare lo script direttamente (python host_app/...) senza pip install
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from host_app.python.se_simulator import SecureElementSimulator
 

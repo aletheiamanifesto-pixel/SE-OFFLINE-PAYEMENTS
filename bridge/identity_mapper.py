@@ -294,7 +294,7 @@ class IdentityMapper:
                 # Supporto formato legacy con wrapper "devices"
                 return dati["devices"]
             return dati if isinstance(dati, dict) else {}
-        except (json.JSONDecodeError, IOError) as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError, IOError) as exc:
             logger.error("❌ Errore caricamento registry da %s: %s", self.registry_path, exc)
             return {}
 

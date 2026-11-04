@@ -14,7 +14,12 @@ Esecuzione: python examples/scenario_caffe.py
 """
 
 import struct
+import sys
 import time
+from pathlib import Path
+
+# Permette di lanciare lo script direttamente (python examples/...) senza pip install
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from host_app.python.se_simulator import SecureElementSimulator
 from bridge.reconciliation_bridge import ReconciliationBridge

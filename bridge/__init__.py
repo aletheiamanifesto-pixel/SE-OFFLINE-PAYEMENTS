@@ -19,8 +19,13 @@ from .aegis_client import AegisClient, AegisApiError
 from .aegis_reconciler import AegisReconciler, ReconciliationResult
 from .identity_mapper import IdentityMapper, DeviceNotFoundError, InvalidAddressError
 from .zk_proof_adapter import ZkProofAdapter, ZkProofError
+from .emittente import Emittente, OperazioneRifiutata, RapportoSincronizzazione
 
 __all__ = [
+    # Emittente del protocollo v2 (carica, scarica, riconcilia, revoche)
+    "Emittente",
+    "OperazioneRifiutata",
+    "RapportoSincronizzazione",
     # Bridge base (non modificato)
     "ReconciliationBridge",
     "TransactionData",

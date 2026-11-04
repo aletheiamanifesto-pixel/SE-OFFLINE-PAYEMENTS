@@ -26,5 +26,8 @@ jobs:
       - name: 🧪 Esegui test con pytest
         run: python -m pytest tests/ -v
 
-      - name: 🚀 Esegui dimostrazione pagamento
-        run: python host-app/python/payment_flow.py
+      - name: 🚀 Esegui dimostrazione pagamento (protocollo v1)
+        run: python host_app/python/payment_flow.py
+
+      - name: 🎬 Esegui demo completa (protocollo v2)
+        run: python demo.py
