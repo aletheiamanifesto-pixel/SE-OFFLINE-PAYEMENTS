@@ -3,3 +3,4 @@
 cd "$(dirname "$0")" || exit 1
 python3 -m pip install --quiet "cryptography>=41.0.0"
 python3 demo.py --passo
+python3 demo_privacy.py --passo
