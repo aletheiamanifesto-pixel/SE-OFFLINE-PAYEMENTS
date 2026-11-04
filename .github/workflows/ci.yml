@@ -31,3 +31,6 @@ jobs:
 
       - name: 🎬 Esegui demo completa (protocollo v2)
         run: python demo.py
+
+      - name: 🕶️ Esegui demo modalità privacy (firma cieca)
+        run: python demo_privacy.py

@@ -101,12 +101,13 @@ public class WalletState {
      * Anche se hai 10.000€, non puoi prelevare più di 1.000€
      * in una volta. Limita i danni in caso di furto.
      *
-     * Default: 50000 centesimi = 500.00€
+     * Default: 30000 centesimi = 300.00€ (il saldo è uno short:
+     * 50000 sarebbe andato in overflow a -15536 bloccando ogni pagamento)
      */
     private short maxTransactionLimit;
 
-    /** Limite di default: 500.00€ */
-    public static final short DEFAULT_MAX_TX_LIMIT = (short) 50000;
+    /** Limite di default: 300.00€ */
+    public static final short DEFAULT_MAX_TX_LIMIT = (short) 30000;
 
     // ═══════════════════════════════════════════════════════════
     // COSTRUTTORE

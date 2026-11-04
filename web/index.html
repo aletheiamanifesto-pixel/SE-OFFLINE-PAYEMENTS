@@ -1,0 +1,631 @@
+<meta charset="utf-8">
+<title>AEGIS Pagamenti Offline</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: una colonna stretta come uno scontrino; barra dei saldi in alto, scenari in sequenza sotto */
+:root {
+  --bg: #f3f4f8; --surface: #ffffff; --ink: #161a2b; --muted: #5b6178; --line: #dfe2ec;
+  --accent: #2b45d6; --accent-soft: #e6eaff; --ok: #137a4a; --ok-soft: #e2f4ea;
+  --ko: #b3261e; --ko-soft: #fbe7e5; --warn: #8a5a00; --warn-soft: #fff1d6;
+  --offline: #5b3fb8; --offline-soft: #eee9ff;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0d111c; --surface: #161b2a; --ink: #e7e9f3; --muted: #9aa1ba; --line: #283049;
+  --accent: #8ea0ff; --accent-soft: #1f2750; --ok: #5fd197; --ok-soft: #12301f;
+  --ko: #ff8a80; --ko-soft: #3a1714; --warn: #f2c063; --warn-soft: #352808;
+  --offline: #b9a6ff; --offline-soft: #26204a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0d111c; --surface: #161b2a; --ink: #e7e9f3; --muted: #9aa1ba; --line: #283049;
+  --accent: #8ea0ff; --accent-soft: #1f2750; --ok: #5fd197; --ok-soft: #12301f;
+  --ko: #ff8a80; --ko-soft: #3a1714; --warn: #f2c063; --warn-soft: #352808;
+  --offline: #b9a6ff; --offline-soft: #26204a; color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body); }
+.wrap { max-width: 760px; margin: 0 auto; padding-block: 20px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 20px; }
+h1 { font: 700 clamp(26px, 6vw, 36px)/1.1 var(--display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+.lead { margin: 6px 0 0; color: var(--muted); max-width: 62ch; }
+.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 12px; }
+.modes button { font: 600 14px var(--body); padding: 10px 8px; border: 0; border-radius: 9px; background: transparent;
+  color: var(--muted); cursor: pointer; display: grid; gap: 1px; }
+.modes button small { font-weight: 400; font-size: 12px; }
+.modes button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.modes button:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.saldi { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 6px; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.chip { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.chip .nome { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip .val { font: 600 18px var(--mono); font-variant-numeric: tabular-nums; }
+.chip.clone { border-style: dashed; border-color: var(--ko); }
+.chip.revocato .val { text-decoration: line-through; color: var(--muted); }
+.chip .tag { font: 500 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ko); }
+
+ol.scenari { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.sc { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
+.sc[data-stato="attesa"] { opacity: .62; }
+.sc header { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; align-items: baseline; }
+.num { font: 700 20px var(--display); color: var(--accent); grid-row: span 2; font-variant-numeric: tabular-nums; }
+.sc h2 { font: 600 16px/1.3 var(--body); margin: 0; text-wrap: balance; }
+.sc p { margin: 0; color: var(--muted); font-size: 14px; }
+.pill { display: inline-block; font: 500 10px var(--mono); letter-spacing: .08em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 99px; margin-right: 6px; vertical-align: 2px; }
+.pill.on { background: var(--accent-soft); color: var(--accent); }
+.pill.off { background: var(--offline-soft); color: var(--offline); }
+.btn { font: 600 14px var(--body); padding: 9px 14px; border-radius: 9px; border: 1px solid var(--accent);
+  background: var(--accent); color: var(--surface); cursor: pointer; justify-self: start; }
+.btn.sec { background: transparent; color: var(--accent); }
+.btn:disabled { opacity: .45; cursor: default; }
+.scontrino { font: 13px/1.5 var(--mono); border-top: 1px dashed var(--line); padding-top: 8px; display: grid; gap: 4px; min-width: 0; }
+.riga { display: grid; grid-template-columns: 22px 1fr; gap: 4px; overflow-wrap: anywhere; }
+.riga .esito { font-weight: 500; }
+.riga.ok .esito { color: var(--ok); } .riga.ko .esito { color: var(--ko); } .riga.inatteso { background: var(--warn-soft); }
+.riga .det { color: var(--muted); font-size: 12px; }
+.riga.info { color: var(--muted); } .riga.allarme { color: var(--ko); font-weight: 500; }
+.hexdump { font: 11px/1.45 var(--mono); color: var(--muted); background: var(--bg); border-radius: 8px; padding: 8px;
+  overflow-x: auto; white-space: pre; }
+.hexdump b { color: var(--accent); font-weight: 500; } .hexdump i { color: var(--offline); font-style: normal; } .hexdump u { color: var(--ok); text-decoration: none; }
+table.cmp { border-collapse: collapse; width: 100%; font-size: 13px; }
+.tab { overflow-x: auto; }
+table.cmp th, table.cmp td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.cmp th { font-weight: 600; color: var(--muted); font-size: 12px; }
+.azioni { display: flex; flex-wrap: wrap; gap: 8px; }
+.esito-finale { font: 500 14px var(--mono); padding: 10px 12px; border-radius: 10px; }
+.esito-finale.ok { background: var(--ok-soft); color: var(--ok); } .esito-finale.ko { background: var(--ko-soft); color: var(--ko); }
+footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; }
+footer a { color: var(--accent); }
+.carico { color: var(--muted); font: 13px var(--mono); }
+@media (prefers-reduced-motion: no-preference) { .riga { animation: entra .25s ease-out both; } @keyframes entra { from { opacity: .3; transform: translateY(2px); } } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Pagamenti offline su chip</h1>
+    <p class="lead">Una giornata in una mini-rete: la banca che emette il denaro, il tuo telefono, il POS di un bar e quello di un'edicola. Esegui gli scenari uno alla volta e guarda cosa succede ai saldi.</p>
+  </header>
+
+  <div class="modes" role="group" aria-label="Modalità">
+    <button id="m-v2" aria-pressed="true" type="button">Tracciabile<small>saldo nel chip, protocollo v2</small></button>
+    <button id="m-priv" aria-pressed="false" type="button">Privata<small>monete a firma cieca</small></button>
+  </div>
+
+  <section class="saldi" aria-label="Saldi"><div class="chips" id="chips"></div></section>
+
+  <ol class="scenari" id="scenari"></ol>
+
+  <div class="azioni">
+    <button class="btn" id="tutti" type="button">Esegui tutti gli scenari</button>
+    <button class="btn sec" id="reset" type="button">Ricomincia</button>
+  </div>
+  <div id="finale"></div>
+
+  <footer>
+    <span>Tutto gira nel tuo browser: chiavi ECDSA P-256 e RSA-2048 vere, generate a ogni avvio. Nessun dato lascia il telefono.</span>
+    <span>Stessa logica del repository <a href="https://github.com/aletheiamanifesto-pixel/SE-OFFLINE-PAYEMENTS">SE-OFFLINE-PAYEMENTS</a> (<code>demo.py</code> e <code>demo_privacy.py</code>), riscritta in JavaScript per il browser.</span>
+  </footer>
+</div>
+
+<script>
+"use strict";
+// ============================================================ utilità
+const enc = new TextEncoder(), subtle = crypto.subtle;
+const T = s => enc.encode(s);
+const cat = (...a) => { const o = new Uint8Array(a.reduce((s, x) => s + x.length, 0)); let i = 0; for (const x of a) { o.set(x, i); i += x.length; } return o; };
+const u32 = v => new Uint8Array([v >>> 24 & 255, v >>> 16 & 255, v >>> 8 & 255, v & 255]);
+const rd32 = (b, o) => ((b[o] << 24) >>> 0) + (b[o + 1] << 16) + (b[o + 2] << 8) + b[o + 3];
+const hex = b => Array.from(b, x => x.toString(16).padStart(2, "0")).join("");
+const eq = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+const rnd = n => crypto.getRandomValues(new Uint8Array(n));
+const sha = async b => new Uint8Array(await subtle.digest("SHA-256", b));
+const euro = c => (c / 100).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+const EC = { name: "ECDSA", namedCurve: "P-256" }, ECS = { name: "ECDSA", hash: "SHA-256" };
+async function nuovaChiave() {
+  const k = await subtle.generateKey(EC, true, ["sign", "verify"]);
+  return { priv: k.privateKey, pub: new Uint8Array(await subtle.exportKey("raw", k.publicKey)) };
+}
+const firma = async (priv, msg) => new Uint8Array(await subtle.sign(ECS, priv, msg));
+async function verifica(pub, msg, sig) {
+  if (sig.length !== 64) return false;
+  try { return await subtle.verify(ECS, await subtle.importKey("raw", pub, EC, false, ["verify"]), sig, msg); }
+  catch { return false; }
+}
+
+const DESC = { 0x6700: "lunghezza dati errata", 0x6982: "firma o certificato non validi (o comando non consentito)",
+  0x6984: "supererebbe il limite di detenzione del chip", 0x6985: "saldo insufficiente",
+  0x6986: "chip non personalizzato", 0x6A80: "pagamento destinato a un altro chip",
+  0x6A81: "chip del pagatore REVOCATO", 0x6A89: "token già usato (replay bloccato)" };
+class Rifiuto extends Error {}
+class ErroreSW extends Rifiuto {
+  constructor(sw, op) { super(`${op}: ${DESC[sw] || "errore"} (SW=0x${sw.toString(16).toUpperCase()})`); this.sw = sw; }
+}
+
+// ============================================================ protocollo v2 (come host_app/python/protocollo_v2.py)
+const LIMITE = 300_00, PACCHETTO = 28 + 64 + 145;
+async function certValido(cert, emitPub) {
+  if (cert.length !== 145 || !eq(cert.slice(0, 4), T("AGC2"))) return false;
+  const id = cert.slice(4, 12), pub = cert.slice(12, 77);
+  return eq((await sha(pub)).slice(0, 8), id) && verifica(emitPub, cert.slice(0, 81), cert.slice(81));
+}
+function leggiPacchetto(p) {
+  const t = p.slice(0, 28);
+  return { token: t, payer: t.slice(4, 12), payee: t.slice(12, 20), importo: rd32(t, 20), contatore: rd32(t, 24),
+           firma: p.slice(28, 92), cert: p.slice(92) };
+}
+async function pacchettoValido(p, emitPub) {
+  const x = leggiPacchetto(p);
+  return await certValido(x.cert, emitPub) && eq(x.payer, x.cert.slice(4, 12)) && verifica(x.cert.slice(12, 77), x.token, x.firma);
+}
+
+class Chip {
+  static async crea(nome) {
+    const c = new Chip(), k = await nuovaChiave();
+    Object.assign(c, { nome, priv: k.priv, pub: k.pub, saldo: 0, contatore: 0, cert: null, emitPub: null, limite: LIMITE,
+      visti: new Map(), revocati: new Set(), verRev: 0, nonce: new Set(), ultimo: null, clone: false });
+    c.id = (await sha(k.pub)).slice(0, 8);
+    return c;
+  }
+  get idHex() { return hex(this.id); }
+  clona() {
+    const c = Object.assign(Object.create(Chip.prototype), this);
+    Object.assign(c, { nome: this.nome + " (clone)", clone: true, visti: new Map(this.visti), revocati: new Set(this.revocati), nonce: new Set(this.nonce) });
+    return c;
+  }
+  async personalizza(emitPub, cert) {
+    if (this.cert) throw new ErroreSW(0x6986, "PERSONALIZE");
+    if (!eq(cert.slice(12, 77), this.pub) || !await certValido(cert, emitPub)) throw new ErroreSW(0x6982, "PERSONALIZE");
+    Object.assign(this, { emitPub, cert, limite: rd32(cert, 77), saldo: 0 });
+  }
+  async _ordine(tag, ordine, op) {
+    const corpo = ordine.slice(0, 24), sig = ordine.slice(24);
+    if (!eq(corpo.slice(0, 4), T(tag)) || !await verifica(this.emitPub, corpo, sig)) throw new ErroreSW(0x6982, op);
+    if (!eq(corpo.slice(4, 12), this.id)) throw new ErroreSW(0x6A80, op);
+    const n = hex(corpo.slice(16, 24));
+    if (this.nonce.has(n)) throw new ErroreSW(0x6A89, op);
+    return { importo: rd32(corpo, 12), n, corpo };
+  }
+  async load(ordine) {
+    const o = await this._ordine("AGL2", ordine, "LOAD");
+    if (this.saldo + o.importo > this.limite) throw new ErroreSW(0x6984, "LOAD");
+    this.nonce.add(o.n); this.saldo += o.importo;
+  }
+  async unload(ordine) {
+    const o = await this._ordine("AGU2", ordine, "UNLOAD");
+    if (o.importo > this.saldo) throw new ErroreSW(0x6985, "UNLOAD");
+    this.nonce.add(o.n); this.saldo -= o.importo;
+    return firma(this.priv, cat(T("AGK2"), o.corpo.slice(4)));
+  }
+  async pay(payee, importo) {
+    if (!importo || eq(payee, this.id)) throw new ErroreSW(0x6A80, "PAY");
+    if (importo > this.saldo) throw new ErroreSW(0x6985, "PAY");
+    const token = cat(T("AGP2"), this.id, payee, u32(importo), u32(this.contatore + 1));
+    const p = cat(token, await firma(this.priv, token), this.cert);
+    this.saldo -= importo; this.contatore += 1; this.ultimo = p;
+    return p;
+  }
+  async receive(p) {
+    const x = leggiPacchetto(p), payer = hex(x.payer);
+    if (!await certValido(x.cert, this.emitPub)) throw new ErroreSW(0x6982, "RECEIVE");
+    if (this.revocati.has(payer)) throw new ErroreSW(0x6A81, "RECEIVE");
+    if (!eq(x.payer, x.cert.slice(4, 12)) || !await verifica(x.cert.slice(12, 77), x.token, x.firma)) throw new ErroreSW(0x6982, "RECEIVE");
+    if (!eq(x.payee, this.id)) throw new ErroreSW(0x6A80, "RECEIVE");
+    if (x.contatore <= (this.visti.get(payer) || 0)) throw new ErroreSW(0x6A89, "RECEIVE");
+    if (this.saldo + x.importo > this.limite) throw new ErroreSW(0x6984, "RECEIVE");
+    this.visti.set(payer, x.contatore); this.saldo += x.importo;
+  }
+  async aggiornaRevoche(lista) {
+    const corpo = lista.slice(0, -64), sig = lista.slice(-64), ver = rd32(corpo, 4), n = corpo[8];
+    if (!eq(corpo.slice(0, 4), T("AGR2")) || corpo.length !== 9 + 8 * n || !await verifica(this.emitPub, corpo, sig)) throw new ErroreSW(0x6982, "UPDATE_REVOCATIONS");
+    if (ver <= this.verRev) throw new ErroreSW(0x6A89, "UPDATE_REVOCATIONS");
+    this.verRev = ver;
+    this.revocati = new Set(Array.from({ length: n }, (_, i) => hex(corpo.slice(9 + 8 * i, 17 + 8 * i))));
+  }
+}
+
+class Emittente {
+  static async crea() {
+    const e = new Emittente(), k = await nuovaChiave();
+    Object.assign(e, { priv: k.priv, pub: k.pub, conti: {}, chip: new Map(), revocati: new Set(), verRev: 0,
+      visti: new Map(), caricato: 0, scaricato: 0, perdite: 0 });
+    return e;
+  }
+  async personalizza(c, titolare) {
+    const corpo = cat(T("AGC2"), c.id, c.pub, u32(LIMITE));
+    await c.personalizza(this.pub, cat(corpo, await firma(this.priv, corpo)));
+    this.chip.set(c.idHex, { titolare, pub: c.pub });
+  }
+  async _ordine(tag, id, importo) { const corpo = cat(T(tag), id, u32(importo), rnd(8)); return cat(corpo, await firma(this.priv, corpo)); }
+  _controlla(c) {
+    if (!this.chip.has(c.idHex)) throw new Rifiuto("chip sconosciuto all'Emittente");
+    if (this.revocati.has(c.idHex)) throw new Rifiuto("chip revocato: operazione bloccata");
+  }
+  async carica(iban, c, importo) {
+    this._controlla(c);
+    if ((this.conti[iban] || 0) < importo) throw new Rifiuto("fondi insufficienti sul conto");
+    await c.load(await this._ordine("AGL2", c.id, importo));
+    this.conti[iban] -= importo; this.caricato += importo;
+  }
+  async scarica(c, iban, importo) {
+    this._controlla(c);
+    const ordine = await this._ordine("AGU2", c.id, importo), conferma = await c.unload(ordine);
+    if (!await verifica(this.chip.get(c.idHex).pub, cat(T("AGK2"), ordine.slice(4, 24)), conferma)) throw new Rifiuto("conferma di scarico non valida");
+    this.conti[iban] = (this.conti[iban] || 0) + importo; this.scaricato += importo;
+  }
+  async sincronizza(pacchetti) {
+    const r = { accettati: 0, duplicati: 0, nonValidi: 0, doppie: [], daRevocati: 0 };
+    for (const p of pacchetti) {
+      if (!await pacchettoValido(p, this.pub)) { r.nonValidi++; continue; }
+      const x = leggiPacchetto(p), payer = hex(x.payer), k = payer + ":" + x.contatore, prec = this.visti.get(k);
+      if (!prec) {
+        this.visti.set(k, x); r.accettati++;
+        if (this.revocati.has(payer)) { r.daRevocati++; this.perdite += x.importo; }
+      } else if (eq(prec.token, x.token)) r.duplicati++;
+      else { r.doppie.push({ payer, contatore: x.contatore, a: hex(prec.payee), b: hex(x.payee) }); this.perdite += x.importo; this.revoca(payer); }
+    }
+    return r;
+  }
+  revoca(id) { if (!this.revocati.has(id)) { this.revocati.add(id); this.verRev++; } }
+  async distribuisci(c) {
+    const ids = [...this.revocati].sort().map(h => Uint8Array.from(h.match(/../g), b => parseInt(b, 16)));
+    const corpo = cat(T("AGR2"), u32(this.verRev), new Uint8Array([ids.length]), ...ids);
+    try { await c.aggiornaRevoche(cat(corpo, await firma(this.priv, corpo))); } catch (e) { if (e.sw !== 0x6A89) throw e; }
+  }
+  titolare(id) { return this.chip.get(id)?.titolare || id; }
+  get inCircolazione() { return this.caricato - this.scaricato; }
+}
+
+class POS {
+  constructor(chip, nome) { this.chip = chip; this.nome = nome; this.registro = []; }
+  async incassa(pagatore, importo, interrompi = false) {
+    const p = await pagatore.pay(this.chip.id, importo);
+    if (interrompi) throw new Rifiuto("telefono allontanato prima della consegna del token");
+    return this.ricevi(p);
+  }
+  async ricevi(p) { await this.chip.receive(p); this.registro.push(p); return p; }
+  async riprendi(pagatore) {
+    if (!pagatore.ultimo) throw new ErroreSW(0x6986, "GET_LAST_PAYMENT");
+    return this.ricevi(pagatore.ultimo);
+  }
+  svuota() { const r = this.registro; this.registro = []; return r; }
+}
+
+// ============================================================ firma cieca (come bridge/ecash.py)
+const TAGLI = [200, 100, 50, 20, 10, 5];
+const b64uBig = s => { const b = atob(s.replace(/-/g, "+").replace(/_/g, "/")); let h = ""; for (const c of b) h += c.charCodeAt(0).toString(16).padStart(2, "0"); return BigInt("0x" + h); };
+const bytesBig = b => b.length ? BigInt("0x" + hex(b)) : 0n;
+function modpow(b, e, m) { let r = 1n; b %= m; while (e > 0n) { if (e & 1n) r = r * b % m; b = b * b % m; e >>= 1n; } return r; }
+function modinv(a, m) { let [r0, r1, s0, s1] = [m, a % m, 0n, 1n]; while (r1) { const q = r0 / r1; [r0, r1] = [r1, r0 - q * r1]; [s0, s1] = [s1, s0 - q * s1]; } return ((s0 % m) + m) % m; }
+function mcd(a, b) { while (b) [a, b] = [b, a % b]; return a; }
+const OAEP = { name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" };
+async function chiaveRSA() {
+  const k = await subtle.generateKey(OAEP, true, ["encrypt", "decrypt"]), j = await subtle.exportKey("jwk", k.privateKey);
+  return { n: b64uBig(j.n), e: b64uBig(j.e), d: b64uBig(j.d), k };
+}
+async function hashModulo(dati, n) {
+  const k = (n.toString(16).length + 1) >> 1, blocchi = [];
+  for (let i = 0; i * 32 < k + 32; i++) blocchi.push(await sha(cat(dati, u32(i))));
+  return bytesBig(cat(...blocchi).slice(0, k)) % n;
+}
+const msgMoneta = (taglio, seriale) => cat(T("AGE1"), u32(taglio), seriale);
+async function monetaValida(pub, m) { return !!pub && m.firma > 0n && m.firma < pub.n && modpow(m.firma, pub.e, pub.n) === await hashModulo(msgMoneta(m.taglio, m.seriale), pub.n); }
+
+class Garante {
+  static async crea() { const g = new Garante(); g.k = (await chiaveRSA()).k; g.aperte = 0; return g; }
+  sigilla(seriale, identita) { return subtle.encrypt({ name: "RSA-OAEP" }, this.k.publicKey, cat(seriale, T(identita))).then(b => new Uint8Array(b)); }
+  async apri(busta) { this.aperte++; return new TextDecoder().decode(new Uint8Array(await subtle.decrypt({ name: "RSA-OAEP" }, this.k.privateKey, busta)).slice(32)); }
+}
+class EmittentePrivato {
+  static async crea() {
+    const e = new EmittentePrivato(); e.chiavi = {};
+    for (const t of TAGLI) e.chiavi[t] = await chiaveRSA();
+    Object.assign(e, { conti: {}, firmati: [], depositate: new Map(), bloccate: 0 });
+    return e;
+  }
+  pub(t) { const k = this.chiavi[t]; return k && { n: k.n, e: k.e }; }
+  firmaCieca(iban, taglio, nascosto) {
+    if ((this.conti[iban] || 0) < taglio) throw new Rifiuto("fondi insufficienti sul conto");
+    this.conti[iban] -= taglio; this.firmati.push(nascosto);
+    const k = this.chiavi[taglio]; return modpow(nascosto, k.d, k.n);
+  }
+  async deposita(iban, spese) {
+    const r = { accreditato: 0, false: 0, doppie: [] };
+    for (const s of spese) {
+      if (!await monetaValida(this.pub(s.moneta.taglio), s.moneta)) { r.false++; continue; }
+      const k = hex(s.moneta.seriale), prec = this.depositate.get(k);
+      if (prec) { r.doppie.push([prec, s]); this.bloccate += s.moneta.taglio; continue; }
+      this.depositate.set(k, s); this.conti[iban] = (this.conti[iban] || 0) + s.moneta.taglio; r.accreditato += s.moneta.taglio;
+    }
+    return r;
+  }
+  async collega(m) { const h = await hashModulo(msgMoneta(m.taglio, m.seriale), this.chiavi[m.taglio].n); return this.firmati.includes(h) || this.firmati.includes(m.firma); }
+}
+function componi(importo) {
+  const quote = { 5: 4, 10: 3, 20: 4, 50: 3, 100: 4 }, out = []; let resto = importo;
+  for (const t of [5, 10, 20, 50, 100]) { const k = Math.min(quote[t], Math.floor(resto / t)); for (let i = 0; i < k; i++) out.push(t); resto -= t * k; }
+  for (const t of TAGLI) while (resto >= t) { out.push(t); resto -= t; }
+  return out;
+}
+function scegli(monete, importo) {
+  const ragg = new Map([[0, []]]);
+  for (const m of [...monete].sort((a, b) => b.taglio - a.taglio))
+    for (const [s, ins] of [...ragg]) { const n = s + m.taglio; if (n <= importo && !ragg.has(n)) ragg.set(n, [...ins, m]); }
+  return ragg.get(importo) || null;
+}
+class Portafoglio {
+  constructor(identita, emittente, garante) { Object.assign(this, { identita, em: emittente, garante, monete: [], ricevuti: new Set(), daDepositare: [], clone: false }); }
+  get saldo() { return this.monete.reduce((s, m) => s + m.taglio, 0); }
+  get nome() { return this.identita; }
+  async preleva(iban, importo) {
+    const tagli = componi(importo);
+    for (const t of tagli) {
+      const pub = this.em.pub(t), seriale = rnd(32), m = await hashModulo(msgMoneta(t, seriale), pub.n);
+      let r; do { r = bytesBig(rnd(256)) % pub.n; } while (r < 2n || mcd(r, pub.n) !== 1n);
+      const s = this.em.firmaCieca(iban, t, m * modpow(r, pub.e, pub.n) % pub.n) * modinv(r, pub.n) % pub.n;
+      const moneta = { taglio: t, seriale, firma: s };
+      if (!await monetaValida(pub, moneta)) throw new Rifiuto("firma dell'Emittente non valida");
+      this.monete.push(moneta);
+    }
+    return tagli.length;
+  }
+  async paga(beneficiario, importo) {
+    const scelte = scegli(this.monete, importo);
+    if (!scelte) throw new Rifiuto("monete non sufficienti per l'importo esatto (niente resto offline)");
+    const spese = [];
+    for (const m of scelte) { spese.push({ moneta: m, beneficiario, busta: await this.garante.sigilla(m.seriale, this.identita) }); this.monete.splice(this.monete.indexOf(m), 1); }
+    return spese;
+  }
+  async incassa(spese) {
+    for (const s of spese) {
+      if (s.beneficiario !== this.identita) throw new Rifiuto("moneta destinata a un altro beneficiario");
+      if (!await monetaValida(this.em.pub(s.moneta.taglio), s.moneta)) throw new Rifiuto("moneta falsa: firma dell'Emittente non valida");
+      if (this.ricevuti.has(hex(s.moneta.seriale))) throw new Rifiuto("moneta già ricevuta (copia bloccata)");
+    }
+    for (const s of spese) { this.ricevuti.add(hex(s.moneta.seriale)); this.monete.push(s.moneta); this.daDepositare.push(s); }
+  }
+  async deposita(iban) {
+    const spese = this.daDepositare; this.daDepositare = [];
+    const r = await this.em.deposita(iban, spese), dep = new Set(spese.map(s => hex(s.moneta.seriale)));
+    this.monete = this.monete.filter(m => !dep.has(hex(m.seriale)));
+    return r;
+  }
+}
+const elencoMonete = lista => { const c = {}; for (const m of lista) c[m.taglio] = (c[m.taglio] || 0) + 1;
+  return Object.entries(c).sort((a, b) => b[0] - a[0]).map(([t, k]) => (k > 1 ? k + "×" : "") + euro(+t)).join(" + "); };
+
+// ============================================================ interfaccia
+let out, inattesi = 0, attori = [];
+const riga = (cls, simbolo, testo, det = "") => {
+  const d = document.createElement("div"); d.className = "riga " + cls;
+  d.innerHTML = `<span class="esito">${simbolo}</span><span>${testo}${det ? `<br><span class="det">${esc(det)}</span>` : ""}</span>`;
+  out.append(d);
+};
+const info = t => riga("info", "·", esc(t));
+const allarme = t => riga("allarme", "!", esc(t));
+async function prova(desc, fn, attesoOk) {
+  let ok = true, det = "";
+  try { await fn(); } catch (e) { if (!(e instanceof Rifiuto)) throw e; ok = false; det = e.message; }
+  const giusto = ok === attesoOk; if (!giusto) inattesi++;
+  riga((ok ? "ok" : "ko") + (giusto ? "" : " inatteso"), ok ? "✓" : "✕", esc((ok ? "OK — " : "RIFIUTATO — ") + desc) + (giusto ? "" : " <b>(inatteso)</b>"), det);
+}
+const verifica_ = (desc, cond) => prova(desc, () => { if (!cond) throw new Rifiuto("condizione falsa"); }, true);
+
+function disegnaSaldi() {
+  document.getElementById("chips").innerHTML = attori.filter(a => a.mostra()).map(a => {
+    const rev = a.revocato?.(); return `<div class="chip${a.clone ? " clone" : ""}${rev ? " revocato" : ""}">
+      <div class="nome">${esc(a.nome)}</div><div class="val">${euro(a.saldo())}</div>
+      ${a.clone ? '<div class="tag">copia illegale</div>' : rev ? '<div class="tag">revocato</div>' : ""}</div>`; }).join("");
+}
+
+function hexPacchetto(p) {
+  const h = hex(p), righe = [];
+  const col = (s, i) => i < 56 ? `<b>${s}</b>` : i < 184 ? `<i>${s}</i>` : `<u>${s}</u>`;
+  for (let i = 0; i < h.length; i += 32) {
+    let r = ""; for (let j = i; j < Math.min(i + 32, h.length); j += 2) r += col(h.slice(j, j + 2), j) + (j % 8 === 6 ? " " : "");
+    righe.push(r);
+  }
+  return righe.join("\n");
+}
+
+// ------------------------------------------------------------ modalità tracciabile
+async function modalitaV2() {
+  const em = await Emittente.crea();
+  em.conti = { "IT-TU": 1000_00, "IT-BAR": 0 };
+  const tu = await Chip.crea("Il tuo telefono"), cb = await Chip.crea("Bar (POS)"), ce = await Chip.crea("Edicola (POS)");
+  for (const [c, t] of [[tu, "Tu"], [cb, "Bar"], [ce, "Edicola"]]) await em.personalizza(c, t);
+  const bar = new POS(cb, "Bar"), edicola = new POS(ce, "Edicola");
+  const st = { clone: null, caffe: null };
+  attori = [
+    { nome: "Il tuo telefono", saldo: () => tu.saldo, mostra: () => true, revocato: () => em.revocati.has(tu.idHex) },
+    { nome: "Bar (POS)", saldo: () => cb.saldo, mostra: () => true },
+    { nome: "Edicola (POS)", saldo: () => ce.saldo, mostra: () => true },
+    { nome: "Telefono clonato", saldo: () => st.clone?.saldo ?? 0, mostra: () => !!st.clone, clone: true },
+    { nome: "Conto bancario IT-TU", saldo: () => em.conti["IT-TU"], mostra: () => true },
+    { nome: "Conto bancario IT-BAR", saldo: () => em.conti["IT-BAR"], mostra: () => true },
+  ];
+  return [
+    { on: true, t: "Carichi 50 € dal conto al chip", p: "La banca firma un ordine di carica: è l'unico modo in cui il denaro entra nel chip.", run: async () => {
+      await prova("carica 50,00 €", () => em.carica("IT-TU", tu, 50_00), true);
+      await prova("carica 400,00 € (oltre il limite di 300 € per chip)", () => em.carica("IT-TU", tu, 400_00), false);
+    } },
+    { on: false, t: "Paghi un caffè al bar, senza internet", p: "Il tuo chip scala 1,50 €, aumenta il contatore e firma il token in un colpo solo.", run: async () => {
+      st.caffe = await bar.incassa(tu, 1_50);
+      const x = leggiPacchetto(st.caffe);
+      info(`pacchetto NFC di ${st.caffe.length} byte: token 28 + firma 64 + certificato 145`);
+      info(`da ${hex(x.payer)} a ${hex(x.payee)}, ${euro(x.importo)}, contatore ${x.contatore}`);
+      const d = document.createElement("div"); d.className = "hexdump"; d.innerHTML = hexPacchetto(st.caffe); out.append(d);
+      info("blu = token · viola = firma del tuo chip · verde = certificato firmato dalla banca");
+    } },
+    { on: false, t: "Sei attacchi che il chip blocca da solo", p: "Nessuno di questi controlli ha bisogno della rete.", run: async () => {
+      await prova("il bar ripresenta lo stesso token (replay)", () => bar.ricevi(st.caffe), false);
+      const m = st.caffe.slice(); m.set(u32(150_00), 20); m.set(u32(11), 24);
+      await prova("token manomesso: importo cambiato in 150 €", () => bar.ricevi(m), false);
+      await prova("l'edicola prova a incassare il token del bar", () => edicola.ricevi(st.caffe), false);
+      await prova("il bar si auto-accredita 1.000 € con il vecchio comando CREDIT", async () => { throw new ErroreSW(0x6982, "CREDIT v1"); }, false);
+      const falsario = await Emittente.crea(), cf = await Chip.crea("Falsario");
+      await falsario.personalizza(cf, "Falsario"); falsario.conti["X"] = 100_00; await falsario.carica("X", cf, 100_00);
+      await prova("un chip certificato da una banca falsa paga il bar", () => bar.incassa(cf, 20_00), false);
+      await prova("paghi 100 € avendone 48,50", () => bar.incassa(tu, 100_00), false);
+    } },
+    { on: false, t: "Il telefono si allontana a metà pagamento", p: "Il chip ha già scalato il saldo, ma il token non è arrivato al POS.", run: async () => {
+      await prova("paghi 3,00 € all'edicola (connessione interrotta)", () => edicola.incassa(tu, 3_00, true), false);
+      info(`saldo telefono ${euro(tu.saldo)}, cassa edicola ${euro(ce.saldo)}: il token è rimasto nel tuo chip`);
+      await prova("secondo tap: l'edicola rilegge il token e incassa", () => edicola.riprendi(tu), true);
+      await prova("l'edicola prova a rileggerlo di nuovo", () => edicola.riprendi(tu), false);
+    } },
+    { on: false, t: "Chip violato e clonato: doppia spesa", p: "Un attaccante estrae la chiave dal tuo chip e ne fa una copia identica.", run: async () => {
+      st.clone = tu.clona();
+      await prova("il telefono vero paga 20 € al bar", () => bar.incassa(tu, 20_00), true);
+      await prova("il CLONE paga 20 € all'edicola", () => edicola.incassa(st.clone, 20_00), true);
+      info("offline nessuno può accorgersene: i due POS non si parlano");
+    } },
+    { on: true, t: "I POS si sincronizzano con la banca", p: "La banca vede lo stesso contatore usato per due token diversi.", run: async () => {
+      for (const pos of [bar, edicola]) {
+        const r = await em.sincronizza(pos.svuota());
+        info(`${pos.nome}: accettati ${r.accettati}, duplicati ${r.duplicati}, non validi ${r.nonValidi}, doppie spese ${r.doppie.length}`);
+        for (const d of r.doppie) allarme(`DOPPIA SPESA: chip ${d.payer}, contatore ${d.contatore}, verso ${d.a} e ${d.b} → chip revocato`);
+      }
+      info(`perdita da coprire: ${euro(em.perdite)}`);
+      await prova("il bar (lista revoche vecchia) incassa 1 € dal clone", () => bar.incassa(st.clone, 1_00), true);
+      for (const pos of [bar, edicola]) await em.distribuisci(pos.chip);
+      info("i POS scaricano la lista revoche aggiornata");
+      await prova("il clone riprova a pagare 1 € al bar", () => bar.incassa(st.clone, 1_00), false);
+      await prova("il titolare del chip revocato prova a ricaricarlo", () => em.carica("IT-TU", tu, 10_00), false);
+    } },
+    { on: true, t: "Il bar versa l'incasso sul conto", p: "Lo scarico è firmato dalla banca e confermato dal chip del bar.", run: async () => {
+      const r = await em.sincronizza(bar.svuota());
+      info(`${r.daRevocati} pagamento da chip revocato → contato come perdita`);
+      const incasso = cb.saldo;
+      await prova(`scarica ${euro(incasso)} su IT-BAR`, () => em.scarica(cb, "IT-BAR", incasso), true);
+      const legittimi = tu.saldo + cb.saldo + ce.saldo;
+      info(`caricato ${euro(em.caricato)} · scaricato ${euro(em.scaricato)} · garantito ${euro(em.inCircolazione)} · perdite ${euro(em.perdite)}`);
+      await verifica_(`saldi dei chip (${euro(legittimi)}) = denaro garantito + perdite`, legittimi === em.inCircolazione + em.perdite);
+    } },
+  ];
+}
+
+// ------------------------------------------------------------ modalità privata
+async function modalitaPrivata() {
+  const garante = await Garante.crea(), em = await EmittentePrivato.crea();
+  em.conti = { "IT-TU": 100_00, "IT-BAR": 0, "IT-EDICOLA": 0 };
+  const tu = new Portafoglio("chip di Tu", em, garante), bar = new Portafoglio("Bar", em, garante), edicola = new Portafoglio("Edicola", em, garante);
+  const st = { clone: null, caffe: null };
+  attori = [
+    { nome: "Il tuo telefono", saldo: () => tu.saldo, mostra: () => true },
+    { nome: "Bar (POS)", saldo: () => bar.saldo, mostra: () => true },
+    { nome: "Edicola (POS)", saldo: () => edicola.saldo, mostra: () => true },
+    { nome: "Telefono clonato", saldo: () => st.clone?.saldo ?? 0, mostra: () => !!st.clone, clone: true },
+    { nome: "Conto bancario IT-TU", saldo: () => em.conti["IT-TU"], mostra: () => true },
+    { nome: "Conti IT-BAR + IT-EDICOLA", saldo: () => em.conti["IT-BAR"] + em.conti["IT-EDICOLA"], mostra: () => true },
+  ];
+  return [
+    { on: true, t: "Prelevi 20 € in monete anonime", p: "Il telefono genera numeri di serie casuali, li nasconde e li fa firmare alla banca.", run: async () => {
+      const n = await tu.preleva("IT-TU", 20_00);
+      info(`${n} monete: ${elencoMonete(tu.monete)}`);
+      info("la banca sa che hai prelevato 20 €, ma non conosce nessun numero di serie");
+      const collegate = await Promise.all(tu.monete.map(m => em.collega(m)));
+      await verifica_("nessun numero di serie è tra i valori firmati dalla banca", !collegate.some(Boolean));
+    } },
+    { on: false, t: "Paghi un caffè da 1,50 €", p: "Il bar verifica offline la firma della banca su ogni moneta.", run: async () => {
+      st.caffe = await tu.paga("Bar", 1_50);
+      await prova(`il bar incassa ${elencoMonete(st.caffe.map(s => s.moneta))}`, () => bar.incassa(st.caffe), true);
+      info(`ogni moneta viaggia con una busta sigillata per il Garante (${st.caffe[0].busta.length} byte): il bar non può aprirla`);
+    } },
+    { on: false, t: "Attacchi bloccati dal POS", p: "Tutti i controlli usano solo le chiavi pubbliche della banca.", run: async () => {
+      const vera = st.caffe[0];
+      await prova("moneta da 2 € con firma inventata", () => bar.incassa([{ ...vera, moneta: { taglio: 200, seriale: new Uint8Array(32).fill(1), firma: vera.moneta.firma } }]), false);
+      await prova("il bar ripresenta la stessa moneta", () => bar.incassa([vera]), false);
+      await prova("l'edicola prova a incassare le monete del bar", () => edicola.incassa(st.caffe), false);
+      await prova("paghi 50 € avendone 18,50", () => tu.paga("Bar", 50_00), false);
+    } },
+    { on: true, t: "Il bar deposita l'incasso", p: "La banca riconosce le proprie firme e paga, ma non può collegarle al prelievo.", run: async () => {
+      const r = await bar.deposita("IT-BAR");
+      info(`accreditati ${euro(r.accreditato)} su IT-BAR`);
+      const collegate = await Promise.all(st.caffe.map(s => em.collega(s.moneta)));
+      await verifica_("la banca NON riesce a collegare le monete del caffè al tuo prelievo", !collegate.some(Boolean));
+      await verifica_("il Garante non ha aperto nessuna busta", garante.aperte === 0);
+    } },
+    { on: false, t: "Chip violato e clonato", p: "Un attaccante copia le monete del tuo chip e spende la stessa moneta due volte.", run: async () => {
+      st.clone = Object.assign(Object.create(Portafoglio.prototype), tu, { monete: [...tu.monete], clone: true });
+      const a = await tu.paga("Bar", 2_00), b = await st.clone.paga("Edicola", 2_00);
+      info(`moneta usata due volte: ${hex(a[0].moneta.seriale).slice(0, 8)}… e ${hex(b[0].moneta.seriale).slice(0, 8)}…`);
+      await prova("il telefono vero paga 2 € al bar", () => bar.incassa(a), true);
+      await prova("il CLONE paga la stessa moneta all'edicola", () => edicola.incassa(b), true);
+      info("offline nessuno può accorgersene: bar ed edicola non si parlano");
+    } },
+    { on: true, t: "Depositi: la doppia spesa viene scoperta", p: "La banca non paga due volte la stessa moneta e chiama il Garante.", run: async () => {
+      info(`bar: accreditati ${euro((await bar.deposita("IT-BAR")).accreditato)}`);
+      const r = await edicola.deposita("IT-EDICOLA");
+      info(`edicola: accreditati ${euro(r.accreditato)}, doppie spese bloccate ${r.doppie.length}`);
+      for (const [p1, p2] of r.doppie) {
+        const c1 = await garante.apri(p1.busta), c2 = await garante.apri(p2.busta);
+        allarme(`moneta ${hex(p1.moneta.seriale).slice(0, 8)}… spesa due volte: il Garante apre le 2 buste → "${c1}" / "${c2}"`);
+        await verifica_("le due buste identificano lo stesso chip", c1 === c2 && c1 === "chip di Tu");
+      }
+      await verifica_("il Garante ha aperto solo le 2 buste della moneta duplicata", garante.aperte === 2);
+      info("le buste del caffè e di tutti i pagamenti onesti restano sigillate");
+    } },
+    { on: false, t: "Chi sa cosa", p: "Il prezzo della privacy: l'hardware deve impedire le copie, la crittografia le scopre dopo.", run: async () => {
+      const t = document.createElement("div"); t.className = "tab";
+      t.innerHTML = `<table class="cmp"><thead><tr><th></th><th>Tracciabile</th><th>Privata</th></tr></thead><tbody>
+        <tr><td>Chi preleva e quanto</td><td>banca</td><td>banca</td></tr>
+        <tr><td>Chi incassa e quanto</td><td>banca</td><td>banca</td></tr>
+        <tr><td>Chi ha pagato chi</td><td>banca, sempre</td><td>nessuno</td></tr>
+        <tr><td>Chi ha fatto doppia spesa</td><td>banca</td><td>Garante, solo per quella moneta</td></tr>
+        <tr><td>Il negozio sa chi sei?</td><td>sì (id del chip)</td><td>no</td></tr></tbody></table>`;
+      out.append(t);
+    } },
+  ];
+}
+
+// ------------------------------------------------------------ stepper
+let scenari = [], prossimo = 0, occupato = false, modo = "v2", generazione = 0;
+const lista = document.getElementById("scenari"), finale = document.getElementById("finale");
+function disegnaScenari() {
+  lista.innerHTML = scenari.map((s, i) => `<li class="sc" data-stato="${i < prossimo ? "fatto" : i === prossimo ? "attivo" : "attesa"}" id="sc-${i}">
+    <header><span class="num">${i + 1}</span><h2><span class="pill ${s.on ? "on" : "off"}">${s.on ? "online" : "offline"}</span>${esc(s.t)}</h2><p>${esc(s.p)}</p></header>
+    ${i === prossimo ? `<button class="btn" type="button" data-esegui="${i}" ${occupato ? "disabled" : ""}>Esegui scenario ${i + 1}</button>` : ""}
+    <div class="scontrino" id="out-${i}" ${s.html ? "" : "hidden"}>${s.html || ""}</div></li>`).join("");
+}
+async function esegui(i) {
+  if (occupato || i !== prossimo || !scenari[i]) return;
+  occupato = true; disegnaScenari();
+  const gen = generazione;
+  out = document.getElementById("out-" + i); out.hidden = false;
+  await scenari[i].run();
+  if (gen !== generazione) return;
+  scenari[i].html = out.innerHTML; prossimo++; occupato = false;
+  disegnaScenari(); disegnaSaldi();
+  if (prossimo === scenari.length) {
+    finale.innerHTML = inattesi ? `<div class="esito-finale ko">${inattesi} controlli NON hanno dato il risultato atteso.</div>`
+                                : `<div class="esito-finale ok">✓ Tutti i controlli hanno dato il risultato atteso.</div>`;
+  }
+}
+async function avvia(m) {
+  modo = m; generazione++; const gen = generazione;
+  document.getElementById("m-v2").setAttribute("aria-pressed", m === "v2");
+  document.getElementById("m-priv").setAttribute("aria-pressed", m === "priv");
+  prossimo = 0; inattesi = 0; occupato = true; finale.innerHTML = ""; attori = [];
+  document.getElementById("chips").innerHTML = "";
+  lista.innerHTML = `<li class="carico">Generazione delle chiavi crittografiche${m === "priv" ? " RSA-2048 (qualche secondo)" : ""}…</li>`;
+  const s = await (m === "v2" ? modalitaV2() : modalitaPrivata());
+  if (gen !== generazione) return;
+  scenari = s; occupato = false; disegnaSaldi(); disegnaScenari();
+  await esegui(0);
+}
+lista.addEventListener("click", e => { const b = e.target.closest("[data-esegui]"); if (b) esegui(+b.dataset.esegui); });
+document.getElementById("tutti").addEventListener("click", async () => { while (prossimo < scenari.length && !occupato) await esegui(prossimo); });
+document.getElementById("reset").addEventListener("click", () => avvia(modo));
+document.getElementById("m-v2").addEventListener("click", () => modo !== "v2" && avvia("v2"));
+document.getElementById("m-priv").addEventListener("click", () => modo !== "priv" && avvia("priv"));
+avvia("v2").catch(err => { lista.innerHTML = `<li class="sc"><p>Errore: ${esc(err.message)}</p></li>`; });
+</script>

@@ -1,0 +1,459 @@
+<meta charset="utf-8">
+<title>AEGIS Wallet</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: app a una colonna per telefono; saldo in alto, azioni a griglia, pannello QR/esito in linea, registro in fondo */
+:root {
+  --bg: #f3f4f8; --surface: #ffffff; --ink: #161a2b; --muted: #5b6178; --line: #dfe2ec;
+  --accent: #2b45d6; --accent-soft: #e6eaff; --ok: #137a4a; --ok-soft: #e2f4ea;
+  --ko: #b3261e; --ko-soft: #fbe7e5; --offline: #5b3fb8; --offline-soft: #eee9ff; --qr-bg: #ffffff; --qr-ink: #000000;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0d111c; --surface: #161b2a; --ink: #e7e9f3; --muted: #9aa1ba; --line: #283049;
+  --accent: #8ea0ff; --accent-soft: #1f2750; --ok: #5fd197; --ok-soft: #12301f;
+  --ko: #ff8a80; --ko-soft: #3a1714; --offline: #b9a6ff; --offline-soft: #26204a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0d111c; --surface: #161b2a; --ink: #e7e9f3; --muted: #9aa1ba; --line: #283049;
+  --accent: #8ea0ff; --accent-soft: #1f2750; --ok: #5fd197; --ok-soft: #12301f;
+  --ko: #ff8a80; --ko-soft: #3a1714; --offline: #b9a6ff; --offline-soft: #26204a; color-scheme: dark }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.5 var(--body); }
+.wrap { max-width: 520px; margin: 0 auto; padding-block: 16px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 16px; }
+.testa { display: grid; gap: 4px; }
+.testa .chi { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.saldo { font: 700 clamp(40px, 13vw, 56px)/1 var(--display); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.badge { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px;
+  background: var(--accent-soft); color: var(--accent); }
+.badge.off { background: var(--offline-soft); color: var(--offline); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.card h2 { font: 600 17px/1.3 var(--body); margin: 0; }
+.card p { margin: 0; color: var(--muted); font-size: 14px; }
+.azioni { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn { font: 600 16px var(--body); padding: 14px 12px; border-radius: 12px; border: 1px solid var(--accent);
+  background: var(--accent); color: var(--surface); cursor: pointer; text-align: center; }
+.btn.sec { background: var(--surface); color: var(--accent); }
+.btn.piena { grid-column: 1 / -1; }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+label { font-size: 14px; color: var(--muted); display: grid; gap: 6px; }
+input, select { font: 500 18px var(--body); padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); width: 100%; }
+.qr { background: var(--qr-bg); border-radius: 12px; padding: 12px; justify-self: center; width: min(100%, 340px); }
+.qr svg { display: block; width: 100%; height: auto; }
+.esito { border-radius: 12px; padding: 12px 14px; font-weight: 500; }
+.esito.ok { background: var(--ok-soft); color: var(--ok); } .esito.ko { background: var(--ko-soft); color: var(--ko); }
+.dett { font: 13px/1.5 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.reg { display: grid; gap: 0; }
+.reg div { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.reg div:last-child { border-bottom: 0; }
+.reg .imp { font: 500 14px var(--mono); font-variant-numeric: tabular-nums; }
+.reg .imp.piu { color: var(--ok); } .reg .imp.meno { color: var(--ko); }
+.reg small { display: block; color: var(--muted); font-size: 12px; }
+.passi { margin: 0; padding-left: 20px; color: var(--muted); font-size: 14px; display: grid; gap: 4px; }
+.nota { font-size: 12px; color: var(--muted); }
+.link { background: none; border: 0; color: var(--accent); font: 500 14px var(--body); padding: 0; cursor: pointer; justify-self: start; }
+</style>
+
+<div class="wrap">
+  <header class="testa">
+    <div class="chi"><span id="nome">Nuovo telefono</span><span class="badge" id="ruolo">da configurare</span><span class="badge off">funziona offline</span></div>
+    <div class="saldo" id="saldo">0,00 €</div>
+  </header>
+
+  <section class="card" id="pannello"></section>
+
+  <section class="card" id="principale" hidden>
+    <div class="azioni">
+      <button class="btn" id="b-paga" type="button">Paga</button>
+      <button class="btn" id="b-incassa" type="button">Incassa</button>
+      <button class="btn sec piena" id="b-scan" type="button">Scansiona un QR</button>
+    </div>
+    <div class="azioni" id="azioni-banca" hidden>
+      <button class="btn sec" id="b-ricarica" type="button">Ricarica un telefono</button>
+      <button class="btn sec" id="b-registra" type="button">Registra un telefono</button>
+      <button class="btn sec piena" id="b-revoche" type="button">Mostra lista revoche</button>
+    </div>
+    <div class="azioni">
+      <button class="btn sec" id="b-sync" type="button">Invia incassi alla banca</button>
+      <button class="btn sec" id="b-ultimo" type="button">Ripeti ultimo pagamento</button>
+    </div>
+  </section>
+
+  <section class="card" id="registro-card" hidden>
+    <h2>Movimenti</h2>
+    <div class="reg" id="registro"></div>
+  </section>
+
+  <section class="card" id="banca-card" hidden>
+    <h2>Banca</h2>
+    <div class="dett" id="banca-info"></div>
+  </section>
+
+  <p class="nota">Prototipo: chiavi ECDSA P-256 generate in questo browser e non esportabili, protocollo firmato v2 del repository SE-OFFLINE-PAYEMENTS. Il saldo è salvato nel browser, non in un chip sicuro: solo per prove, mai denaro reale. <button class="link" id="b-reset" type="button">Azzera questo telefono</button></p>
+  <input type="file" accept="image/*" capture="environment" id="foto" hidden>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script>
+"use strict";
+// ============================================================ utilità
+const enc = new TextEncoder(), dec = new TextDecoder(), subtle = crypto.subtle;
+const T = s => enc.encode(s);
+const cat = (...a) => { const o = new Uint8Array(a.reduce((s, x) => s + x.length, 0)); let i = 0; for (const x of a) { o.set(x, i); i += x.length; } return o; };
+const u32 = v => new Uint8Array([v >>> 24 & 255, v >>> 16 & 255, v >>> 8 & 255, v & 255]);
+const rd32 = (b, o) => ((b[o] << 24) >>> 0) + (b[o + 1] << 16) + (b[o + 2] << 8) + b[o + 3];
+const hex = b => Array.from(b, x => x.toString(16).padStart(2, "0")).join("");
+const unhex = h => Uint8Array.from((h || "").match(/../g) || [], b => parseInt(b, 16));
+const eq = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+const rnd = n => crypto.getRandomValues(new Uint8Array(n));
+const sha = async b => new Uint8Array(await subtle.digest("SHA-256", b));
+const euro = c => (c / 100).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const breve = id => hex(id).slice(0, 8).toUpperCase();
+const b64 = b => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64 = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+const $ = id => document.getElementById(id);
+
+const EC = { name: "ECDSA", namedCurve: "P-256" }, ECS = { name: "ECDSA", hash: "SHA-256" };
+const firma = async (priv, msg) => new Uint8Array(await subtle.sign(ECS, priv, msg));
+async function verifica(pub, msg, sig) {
+  if (sig.length !== 64) return false;
+  try { return await subtle.verify(ECS, await subtle.importKey("raw", pub, EC, false, ["verify"]), sig, msg); } catch { return false; }
+}
+async function nuovaChiave() {
+  const k = await subtle.generateKey(EC, false, ["sign", "verify"]);  // privata NON esportabile
+  return { priv: k.privateKey, pub: new Uint8Array(await subtle.exportKey("raw", k.publicKey)) };
+}
+
+const DESC = { 0x6982: "firma o certificato non validi", 0x6984: "supererebbe il limite di 300 € del telefono",
+  0x6985: "saldo insufficiente", 0x6986: "telefono non ancora registrato presso la banca", 0x6A80: "pagamento destinato a un altro telefono",
+  0x6A81: "il telefono che paga è REVOCATO", 0x6A89: "già usato (copia bloccata)" };
+class Rifiuto extends Error {}
+const sw = code => new Rifiuto(DESC[code] || "errore " + code.toString(16));
+
+// ============================================================ archivio locale (chiavi in IndexedDB, stato in localStorage)
+function idb() { return new Promise((ok, ko) => { const r = indexedDB.open("aegis-wallet", 1); r.onupgradeneeded = () => r.result.createObjectStore("chiavi"); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); }); }
+async function chiaveSalva(nome, k) { const d = await idb(); await new Promise((ok, ko) => { const t = d.transaction("chiavi", "readwrite"); t.objectStore("chiavi").put(k, nome); t.oncomplete = ok; t.onerror = () => ko(t.error); }); }
+async function chiaveLeggi(nome) { const d = await idb(); return new Promise(ok => { const r = d.transaction("chiavi").objectStore("chiavi").get(nome); r.onsuccess = () => ok(r.result || null); r.onerror = () => ok(null); }); }
+async function chiaviCancella() { try { const d = await idb(); d.transaction("chiavi", "readwrite").objectStore("chiavi").clear(); } catch {} }
+const KEY = "aegis-wallet-stato";
+function salva() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} }
+function carica() { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; } }
+
+// ============================================================ stato
+// Stato del "chip" (come SecureElementSimulator v2) e, sul telefono Banca, dell'Emittente.
+let S = null, chiavePriv = null, chiaveBanca = null;
+const LIMITE = 300_00;
+function statoVuoto(nome) {
+  return { nome, pub: "", id: "", cert: "", emitPub: "", saldo: 0, contatore: 0, limite: LIMITE, visti: {}, revocati: [], verRev: 0,
+           nonce: [], ultimo: "", registro: [], daInviare: [], banca: null };
+}
+
+// ============================================================ protocollo v2 lato chip
+async function certValido(cert, emitPub) {
+  if (cert.length !== 145 || !eq(cert.slice(0, 4), T("AGC2"))) return false;
+  return eq((await sha(cert.slice(12, 77))).slice(0, 8), cert.slice(4, 12)) && verifica(emitPub, cert.slice(0, 81), cert.slice(81));
+}
+const leggiPacchetto = p => ({ token: p.slice(0, 28), payer: p.slice(4, 12), payee: p.slice(12, 20), importo: rd32(p, 20), contatore: rd32(p, 24), firma: p.slice(28, 92), cert: p.slice(92) });
+const pronto = () => S && S.cert;
+
+async function personalizza(emitPub, cert) {
+  if (S.cert) throw new Rifiuto("questo telefono è già registrato presso una banca");
+  if (!eq(cert.slice(12, 77), unhex(S.pub)) || !await certValido(cert, emitPub)) throw sw(0x6982);
+  Object.assign(S, { emitPub: hex(emitPub), cert: hex(cert), limite: rd32(cert, 77), saldo: 0 });
+}
+async function load(ordine) {
+  if (!pronto()) throw sw(0x6986);
+  const corpo = ordine.slice(0, 24);
+  if (!eq(corpo.slice(0, 4), T("AGL2")) || !await verifica(unhex(S.emitPub), corpo, ordine.slice(24))) throw sw(0x6982);
+  if (hex(corpo.slice(4, 12)) !== S.id) throw new Rifiuto("ricarica destinata a un altro telefono");
+  const n = hex(corpo.slice(16, 24)), imp = rd32(corpo, 12);
+  if (S.nonce.includes(n)) throw sw(0x6A89);
+  if (S.saldo + imp > S.limite) throw sw(0x6984);
+  S.nonce.push(n); S.saldo += imp;
+  S.registro.unshift({ t: Date.now(), tipo: "ricarica", imp });
+  return imp;
+}
+async function pay(payee, importo) {
+  if (!pronto()) throw sw(0x6986);
+  if (!importo || hex(payee) === S.id) throw sw(0x6A80);
+  if (importo > S.saldo) throw sw(0x6985);
+  const token = cat(T("AGP2"), unhex(S.id), payee, u32(importo), u32(S.contatore + 1));
+  const p = cat(token, await firma(chiavePriv, token), unhex(S.cert));
+  S.saldo -= importo; S.contatore += 1; S.ultimo = hex(p);
+  S.registro.unshift({ t: Date.now(), tipo: "pagato", imp: -importo, a: breve(payee), cnt: S.contatore });
+  return p;
+}
+async function receive(p) {
+  if (!pronto()) throw sw(0x6986);
+  const x = leggiPacchetto(p), payer = hex(x.payer);
+  if (!await certValido(x.cert, unhex(S.emitPub))) throw new Rifiuto("il telefono che paga non è registrato presso la tua banca");
+  if (S.revocati.includes(payer)) throw sw(0x6A81);
+  if (!eq(x.payer, x.cert.slice(4, 12)) || !await verifica(x.cert.slice(12, 77), x.token, x.firma)) throw sw(0x6982);
+  if (hex(x.payee) !== S.id) throw sw(0x6A80);
+  if (x.contatore <= (S.visti[payer] || 0)) throw sw(0x6A89);
+  if (S.saldo + x.importo > S.limite) throw sw(0x6984);
+  S.visti[payer] = x.contatore; S.saldo += x.importo; S.daInviare.push(hex(p));
+  S.registro.unshift({ t: Date.now(), tipo: "incassato", imp: x.importo, da: breve(x.payer), cnt: x.contatore });
+  return x;
+}
+async function aggiornaRevoche(lista) {
+  if (!pronto()) throw sw(0x6986);
+  const corpo = lista.slice(0, -64), ver = rd32(corpo, 4), n = corpo[8];
+  if (!eq(corpo.slice(0, 4), T("AGR2")) || corpo.length !== 9 + 8 * n || !await verifica(unhex(S.emitPub), corpo, lista.slice(-64))) throw sw(0x6982);
+  if (ver <= S.verRev) throw new Rifiuto("lista revoche già aggiornata");
+  S.verRev = ver; S.revocati = Array.from({ length: n }, (_, i) => hex(corpo.slice(9 + 8 * i, 17 + 8 * i)));
+  return n;
+}
+
+// ============================================================ protocollo v2 lato Emittente (solo telefono Banca)
+async function bancaCertifica(pub, nome) {
+  const B = S.banca, id = (await sha(pub)).slice(0, 8);
+  const corpo = cat(T("AGC2"), id, pub, u32(LIMITE));
+  const cert = cat(corpo, await firma(chiaveBanca, corpo));
+  B.telefoni[hex(id)] = { nome, pub: hex(pub) };
+  return { id, cert };
+}
+async function bancaOrdineLoad(idHex, importo) {
+  const B = S.banca;
+  if (B.revocati.includes(idHex)) throw new Rifiuto("telefono revocato: ricarica bloccata");
+  if (B.conto < importo) throw new Rifiuto("fondi insufficienti sul conto di prova");
+  const corpo = cat(T("AGL2"), unhex(idHex), u32(importo), rnd(8));
+  B.conto -= importo; B.caricato += importo;
+  return cat(corpo, await firma(chiaveBanca, corpo));
+}
+async function bancaSincronizza(p) {
+  const B = S.banca, x = leggiPacchetto(p), payer = hex(x.payer);
+  if (!await certValido(x.cert, unhex(B.pub)) || !eq(x.payer, x.cert.slice(4, 12)) || !await verifica(x.cert.slice(12, 77), x.token, x.firma))
+    return { esito: "non valido" };
+  const k = payer + ":" + x.contatore, prec = B.visti[k];
+  if (!prec) {
+    B.visti[k] = hex(x.token);
+    if (B.revocati.includes(payer)) { B.perdite += x.importo; return { esito: "da revocato", x }; }
+    return { esito: "accettato", x };
+  }
+  if (prec === hex(x.token)) return { esito: "duplicato", x };
+  B.perdite += x.importo;
+  if (!B.revocati.includes(payer)) { B.revocati.push(payer); B.verRev++; }
+  return { esito: "doppia spesa", x };
+}
+async function bancaListaRevoche() {
+  const B = S.banca, ids = [...B.revocati].sort().map(unhex);
+  const corpo = cat(T("AGR2"), u32(B.verRev), new Uint8Array([ids.length]), ...ids);
+  return cat(corpo, await firma(chiaveBanca, corpo));
+}
+const nomeTelefono = idHex => S.banca?.telefoni[idHex]?.nome || idHex.slice(0, 8).toUpperCase();
+
+// ============================================================ QR
+const TIPI = { AGN2: "registrazione", AGB2: "certificato", AGL2: "ricarica", AGQ2: "richiesta", AGP2: "pagamento", AGR2: "revoche" };
+function svgQR(dati) {
+  const q = qrcode(0, "L"); q.addData("AEGIS:" + b64(dati), "Byte"); q.make();
+  return q.createSvgTag({ cellSize: 6, margin: 3, scalable: true });
+}
+async function leggiFoto(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ko(new Rifiuto("immagine non leggibile")); i.src = url; });
+    for (const lato of [1400, 1000, 700, 2000]) {
+      const s = Math.min(1, lato / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      const ctx = c.getContext("2d", { willReadFrequently: true }); ctx.drawImage(img, 0, 0, c.width, c.height);
+      const r = jsQR(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: "attemptBoth" });
+      if (r && r.data.startsWith("AEGIS:")) return unb64(r.data.slice(6));
+      if (r) throw new Rifiuto("questo QR non appartiene all'app");
+    }
+    throw new Rifiuto("nessun QR trovato nella foto: avvicinati, evita i riflessi e riprova");
+  } finally { URL.revokeObjectURL(url); }
+}
+let attesaFoto = null;
+$("foto").addEventListener("change", async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f || !attesaFoto) return;
+  const cb = attesaFoto; attesaFoto = null;
+  try { await cb(await leggiFoto(f)); } catch (err) { mostraEsito(false, err.message); }
+});
+function scatta(cb) { attesaFoto = cb; $("foto").click(); }
+
+// ============================================================ interfaccia
+function disegna() {
+  $("nome").textContent = S ? S.nome : "Nuovo telefono";
+  $("ruolo").textContent = !S ? "da configurare" : S.banca ? "banca + wallet" : S.cert ? "wallet registrato" : "in attesa di registrazione";
+  $("saldo").textContent = euro(S?.saldo || 0);
+  $("principale").hidden = !pronto();
+  $("azioni-banca").hidden = !S?.banca;
+  $("b-sync").textContent = S?.daInviare?.length ? `Invia incassi alla banca (${S.daInviare.length})` : "Invia incassi alla banca";
+  $("b-sync").disabled = !S?.daInviare?.length || !!S?.banca;
+  $("b-ultimo").disabled = !S?.ultimo;
+  $("registro-card").hidden = !S?.registro?.length;
+  $("registro").innerHTML = (S?.registro || []).slice(0, 30).map(r => {
+    const ora = new Date(r.t).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const desc = r.tipo === "ricarica" ? "Ricarica dalla banca" : r.tipo === "pagato" ? `Pagato a ${r.a}` : `Incassato da ${r.da}`;
+    return `<div><span>${esc(desc)}<small>${ora}${r.cnt ? " · contatore " + r.cnt : ""}</small></span><span class="imp ${r.imp > 0 ? "piu" : "meno"}">${r.imp > 0 ? "+" : ""}${euro(r.imp)}</span></div>`;
+  }).join("");
+  const B = S?.banca;
+  $("banca-card").hidden = !B;
+  if (B) $("banca-info").innerHTML = `Conto di prova: ${euro(B.conto)}<br>Denaro caricato sui telefoni: ${euro(B.caricato)}<br>Telefoni registrati: ${Object.values(B.telefoni).map(t => esc(t.nome)).join(", ") || "nessuno"}<br>Revocati: ${B.revocati.map(nomeTelefono).map(esc).join(", ") || "nessuno"}<br>Perdite da frode: ${euro(B.perdite)}`;
+}
+function pannello(html) { $("pannello").hidden = false; $("pannello").innerHTML = html; $("pannello").scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+function chiudi() { if (pronto()) $("pannello").hidden = true; else schermataIniziale(); }
+function mostraEsito(ok, testo, dett = "") {
+  pannello(`<div class="esito ${ok ? "ok" : "ko"}">${ok ? "✓ " : "✕ "}${esc(testo)}</div>${dett ? `<div class="dett">${dett}</div>` : ""}<button class="btn sec" type="button" data-chiudi>Fatto</button>`);
+}
+function mostraQR(titolo, passi, dati, extra = "") {
+  window.ultimoQR = dati;
+  pannello(`<h2>${esc(titolo)}</h2><ol class="passi">${passi.map(p => `<li>${esc(p)}</li>`).join("")}</ol>
+    <div class="qr">${svgQR(dati)}</div><div class="dett">${TIPI[dec.decode(dati.slice(0, 4))] || "dati"} · ${dati.length} byte</div>${extra}
+    <button class="btn sec" type="button" data-chiudi>Fatto</button>`);
+}
+$("pannello").addEventListener("click", e => { if (e.target.closest("[data-chiudi]")) chiudi(); });
+
+function schermataIniziale() {
+  if (!S) {
+    pannello(`<h2>Configura questo telefono</h2>
+      <p>Un telefono fa da <b>banca</b> (emette il denaro di prova) e ha anche un suo wallet. Tutti gli altri telefoni si registrano presso di lui.</p>
+      <label for="in-nome">Nome di questo telefono<input id="in-nome" maxlength="20" placeholder="Il mio iPhone" autocomplete="off"></label>
+      <div class="azioni"><button class="btn" type="button" id="crea-banca">È la banca</button><button class="btn sec" type="button" id="unisciti">Unisciti a una banca</button></div>`);
+    $("crea-banca").onclick = () => configura(true);
+    $("unisciti").onclick = () => configura(false);
+  } else if (!S.cert) {
+    mostraQR("Registra questo telefono", ["Sul telefono Banca tocca «Registra un telefono» e fotografa questo QR.",
+      "Poi tocca qui sotto «Scansiona il certificato» e fotografa il QR che compare sulla Banca."],
+      cat(T("AGN2"), unhex(S.pub), T(S.nome).slice(0, 20)),
+      `<button class="btn" type="button" id="scan-cert">Scansiona il certificato</button>`);
+    $("scan-cert").onclick = () => scatta(gestisciQR);
+  }
+}
+async function configura(banca) {
+  const nome = ($("in-nome").value || "").trim() || (banca ? "Banca" : "Telefono");
+  const k = await nuovaChiave(); await chiaveSalva("chip", k.priv); chiavePriv = k.priv;
+  S = statoVuoto(nome); S.pub = hex(k.pub); S.id = hex((await sha(k.pub)).slice(0, 8));
+  if (banca) {
+    const kb = await nuovaChiave(); await chiaveSalva("banca", kb.priv); chiaveBanca = kb.priv;
+    S.banca = { pub: hex(kb.pub), conto: 1000_00, caricato: 0, perdite: 0, telefoni: {}, revocati: [], verRev: 0, visti: {} };
+    const { cert } = await bancaCertifica(k.pub, nome + " (banca)");
+    await personalizza(kb.pub, cert);
+  }
+  salva(); disegna();
+  if (banca) mostraEsito(true, "Banca creata. Il tuo wallet è registrato.", "Usa «Ricarica un telefono» per caricare denaro di prova sul tuo wallet, poi registra il secondo telefono.");
+  else schermataIniziale();
+}
+
+// ---------------------------------------------- gestione di qualsiasi QR fotografato
+async function gestisciQR(d) {
+  const tipo = dec.decode(d.slice(0, 4));
+  if (tipo === "AGB2") {            // certificato per questo telefono
+    await personalizza(d.slice(4, 69), d.slice(69));
+    salva(); disegna(); return mostraEsito(true, "Telefono registrato presso la banca.", "Ora la banca può ricaricarti e puoi pagare e incassare.");
+  }
+  if (tipo === "AGN2") {            // richiesta di registrazione (solo Banca)
+    if (!S.banca) throw new Rifiuto("solo il telefono Banca può registrare altri telefoni");
+    const pub = d.slice(4, 69), nome = dec.decode(d.slice(69)) || "Telefono";
+    const { cert } = await bancaCertifica(pub, nome); salva(); disegna();
+    return mostraQR(`Certificato per «${nome}»`, [`Sull'altro telefono tocca «Scansiona il certificato» e fotografa questo QR.`],
+      cat(T("AGB2"), unhex(S.banca.pub), cert));
+  }
+  if (!pronto()) throw sw(0x6986);
+  if (tipo === "AGL2") { const imp = await load(d); salva(); disegna(); return mostraEsito(true, `Ricarica di ${euro(imp)} ricevuta.`); }
+  if (tipo === "AGQ2") return confermaPagamento(d.slice(4, 12), rd32(d, 12));
+  if (tipo === "AGR2") { const n = await aggiornaRevoche(d); salva(); disegna(); return mostraEsito(true, `Lista revoche aggiornata: ${n} telefoni bloccati.`); }
+  if (tipo === "AGP2" && d.length === 237) {
+    const payee = hex(d.slice(12, 20));
+    if (payee === S.id) {
+      const x = await receive(d);
+      if (S.banca) { await bancaSincronizza(d); S.daInviare = []; }  // la banca registra subito i propri incassi
+      salva(); disegna();
+      return mostraEsito(true, `Incassati ${euro(x.importo)}.`, `Da ${breve(x.payer)} · contatore ${x.contatore} · firma e certificato verificati offline`);
+    }
+    if (S.banca) {
+      const r = await bancaSincronizza(d); salva(); disegna();
+      const msg = { "accettato": "Incasso registrato dalla banca.", "duplicato": "Questo incasso era già stato registrato.",
+        "non valido": "Token non valido: rifiutato.", "da revocato": "Pagamento da un telefono revocato: contato come perdita.",
+        "doppia spesa": "DOPPIA SPESA scoperta: il telefono che ha pagato è stato revocato." }[r.esito];
+      return mostraEsito(r.esito === "accettato" || r.esito === "duplicato", msg,
+        r.x ? `${nomeTelefono(hex(r.x.payer))} → ${nomeTelefono(hex(r.x.payee))} · ${euro(r.x.importo)} · contatore ${r.x.contatore}` : "");
+    }
+    throw sw(0x6A80);
+  }
+  throw new Rifiuto("questo QR non va usato qui");
+}
+function confermaPagamento(payee, importo) {
+  pannello(`<h2>Confermi il pagamento?</h2><div class="saldo">${euro(importo)}</div>
+    <p>A ${esc(breve(payee))} · saldo dopo il pagamento: ${euro(S.saldo - importo)}</p>
+    <div class="azioni"><button class="btn" type="button" id="conferma">Paga ${euro(importo)}</button><button class="btn sec" type="button" data-chiudi>Annulla</button></div>`);
+  $("conferma").onclick = async () => {
+    try {
+      const p = await pay(payee, importo); salva(); disegna();
+      mostraQR(`Pagamento di ${euro(importo)}`, ["Fai fotografare questo QR al telefono che incassa (tasto «Scansiona un QR»).",
+        "Il saldo è già stato scalato. Se qualcosa va storto, «Ripeti ultimo pagamento» mostra di nuovo questo QR: non può essere incassato due volte."], p);
+    } catch (e) { mostraEsito(false, e.message); }
+  };
+}
+
+// ---------------------------------------------- pulsanti
+const azione = fn => async () => { try { await fn(); } catch (e) { mostraEsito(false, e.message); } };
+$("b-scan").onclick = () => scatta(gestisciQR);
+$("b-paga").onclick = () => pannello(`<h2>Paga</h2><ol class="passi"><li>Chiedi a chi incassa di toccare «Incassa» e inserire l'importo.</li><li>Fotografa il QR della richiesta.</li></ol>
+  <button class="btn" type="button" id="scan-rich">Fotografa la richiesta</button><button class="btn sec" type="button" data-chiudi>Annulla</button>`) || ($("scan-rich").onclick = () => scatta(gestisciQR));
+$("b-incassa").onclick = () => {
+  pannello(`<h2>Incassa</h2><label for="in-imp">Importo in euro<input id="in-imp" inputmode="decimal" placeholder="0,00" autocomplete="off"></label>
+    <div class="dett" id="err-imp"></div><div class="azioni"><button class="btn" type="button" id="crea-rich">Mostra richiesta</button><button class="btn sec" type="button" data-chiudi>Annulla</button></div>`);
+  $("in-imp").focus();
+  $("crea-rich").onclick = () => {
+    const v = Math.round(parseFloat(($("in-imp").value || "").replace(",", ".")) * 100);
+    if (!(v > 0) || v > LIMITE) { $("err-imp").textContent = "Inserisci un importo tra 0,01 e 300,00 €."; return; }
+    mostraQR(`Richiesta di ${euro(v)}`, ["Fai fotografare questo QR a chi paga (tasto «Paga»).", "Quando chi paga ti mostra il suo QR, tocca qui sotto e fotografalo."],
+      cat(T("AGQ2"), unhex(S.id), u32(v)), `<button class="btn" type="button" id="scan-pag">Fotografa il pagamento</button>`);
+    $("scan-pag").onclick = () => scatta(gestisciQR);
+  };
+};
+$("b-ricarica").onclick = () => {
+  const opz = Object.entries(S.banca.telefoni).filter(([id]) => !S.banca.revocati.includes(id))
+    .map(([id, t]) => `<option value="${id}">${esc(t.nome)}</option>`).join("");
+  pannello(`<h2>Ricarica un telefono</h2><label for="in-dest">Telefono<select id="in-dest">${opz}</select></label>
+    <label for="in-ric">Importo in euro<input id="in-ric" inputmode="decimal" value="50" autocomplete="off"></label><div class="dett" id="err-ric"></div>
+    <div class="azioni"><button class="btn" type="button" id="crea-ric">Ricarica</button><button class="btn sec" type="button" data-chiudi>Annulla</button></div>`);
+  $("crea-ric").onclick = azione(async () => {
+    const id = $("in-dest").value, v = Math.round(parseFloat(($("in-ric").value || "").replace(",", ".")) * 100);
+    if (!(v > 0)) { $("err-ric").textContent = "Inserisci un importo valido."; return; }
+    if (id === S.id && S.saldo + v > S.limite) throw sw(0x6984);
+    const ordine = await bancaOrdineLoad(id, v);
+    if (id === S.id) { await load(ordine); salva(); disegna(); return mostraEsito(true, `Ricaricati ${euro(v)} sul tuo wallet.`); }
+    salva(); disegna();
+    mostraQR(`Ricarica di ${euro(v)} per «${S.banca.telefoni[id].nome}»`, ["Sull'altro telefono tocca «Scansiona un QR» e fotografa questo codice.", "Il codice vale una sola volta."], ordine);
+  });
+};
+$("b-registra").onclick = () => pannello(`<h2>Registra un telefono</h2><ol class="passi"><li>Sull'altro telefono scegli «Unisciti a una banca».</li><li>Fotografa il QR che compare.</li></ol>
+  <button class="btn" type="button" id="scan-reg">Fotografa il QR di registrazione</button><button class="btn sec" type="button" data-chiudi>Annulla</button>`) || ($("scan-reg").onclick = () => scatta(gestisciQR));
+$("b-revoche").onclick = azione(async () => mostraQR(`Lista revoche (${S.banca.revocati.length})`, ["Fai fotografare questo QR agli altri telefoni: rifiuteranno i pagamenti dai telefoni revocati."], await bancaListaRevoche()));
+let indiceInvio = 0;
+$("b-sync").onclick = () => { indiceInvio = 0; mostraInvio(); };
+function mostraInvio() {
+  const tot = S.daInviare.length;
+  if (indiceInvio >= tot) { S.daInviare = []; salva(); disegna(); return mostraEsito(true, "Tutti gli incassi sono stati consegnati alla banca."); }
+  mostraQR(`Incasso ${indiceInvio + 1} di ${tot}`, ["Sul telefono Banca tocca «Scansiona un QR» e fotografa questo codice.", "Poi tocca «Avanti»."],
+    unhex(S.daInviare[indiceInvio]), `<button class="btn" type="button" id="avanti">Avanti</button>`);
+  $("avanti").onclick = () => { indiceInvio++; mostraInvio(); };
+}
+$("b-ultimo").onclick = () => S.ultimo && mostraQR("Ultimo pagamento", ["Fai fotografare di nuovo questo QR al telefono che incassa.", "Se l'aveva già incassato, verrà rifiutato come copia."], unhex(S.ultimo));
+$("b-reset").onclick = () => pannello(`<h2>Azzerare questo telefono?</h2><p>Saldo, chiavi e registrazione vengono cancellati. ${S?.banca ? "È il telefono Banca: anche gli altri telefoni dovranno registrarsi di nuovo." : ""}</p>
+  <div class="azioni"><button class="btn" type="button" id="conf-reset">Azzera</button><button class="btn sec" type="button" data-chiudi>Annulla</button></div>`) ||
+  ($("conf-reset").onclick = async () => { try { localStorage.removeItem(KEY); } catch {} await chiaviCancella(); S = null; chiavePriv = chiaveBanca = null; disegna(); schermataIniziale(); });
+
+// ---------------------------------------------- avvio
+(async () => {
+  if (!window.crypto?.subtle || !window.qrcode || !window.jsQR) {
+    pannello(`<div class="esito ko">Questo browser non supporta la crittografia o non ha caricato i componenti QR. Apri la pagina con Safari o Chrome aggiornati, con internet attivo la prima volta.</div>`);
+    return;
+  }
+  S = carica();
+  if (S) { chiavePriv = await chiaveLeggi("chip"); if (S.banca) chiaveBanca = await chiaveLeggi("banca"); if (!chiavePriv) S = null; }
+  disegna();
+  if (pronto()) $("pannello").hidden = true; else schermataIniziale();
+})();
+</script>

@@ -59,6 +59,14 @@ La demo simula una giornata in una mini-rete di pagamento (Emittente, il tuo tel
 
 Senza `--passo` la demo gira tutta di fila ed esce con codice 1 se un controllo non dà il risultato atteso (la usa la CI).
 
+### 🕶️ Modalità privacy (firma cieca)
+
+```bash
+python demo_privacy.py --passo
+```
+
+Stessa giornata, ma il denaro sono **monete anonime** firmate "alla cieca" dall'Emittente, come il contante: né il negozio né l'Emittente sanno chi ha pagato. Se però qualcuno spende due volte la stessa moneta, un **Garante** indipendente apre solo le buste sigillate di quella moneta e identifica il chip. Dettagli in [`docs/06_PRIVACY_ECASH.md`](docs/06_PRIVACY_ECASH.md).
+
 ## 🚀 Quick Start
 
 ### 1. Clona il repository
@@ -116,6 +124,7 @@ docker run --rm aegis-offline-payments python -m pytest tests/ -v   # test
 ```
 SE-OFFLINE-PAYEMENTS/
 ├── demo.py                    # Demo completa del protocollo v2 (7 scenari)
+├── demo_privacy.py            # Demo modalità privacy con monete a firma cieca
 ├── avvia_demo.bat / .sh       # Lanciatori con un clic
 ├── host_app/python/
 │   ├── se_simulator.py        # Simulatore Secure Element (ECDSA reale, comandi APDU v1 + v2)
@@ -124,6 +133,7 @@ SE-OFFLINE-PAYEMENTS/
 │   └── payment_flow.py        # Flusso pagamento v1 (didattico)
 ├── bridge/
 │   ├── emittente.py           # Emittente: certifica, carica/scarica, riconcilia, revoca
+│   ├── ecash.py               # Monete con firma cieca, Garante, portafoglio privato
 │   └── reconciliation_bridge.py  # Riconciliazione offline → blockchain AEGIS
 ├── applet/                    # Applet JavaCard per chip NFC reali
 │   ├── build.gradle
@@ -154,7 +164,7 @@ SE-OFFLINE-PAYEMENTS/
 |---|---|
 | Simulatore Python, protocollo v2, Emittente, demo | ✅ Funzionante e testato |
 | Applet JavaCard | ⚠️ Implementa ancora il protocollo v1 (saldo massimo 327,67 €, `CREDIT` non autenticato): il porting del v2 è il prossimo passo |
-| Privacy "tipo contante" (e-cash / ZK) | 🔜 Da progettare: oggi l'Emittente vede i pagamenti riconciliati |
+| Privacy "tipo contante" (firma cieca + Garante) | 🧪 Prototipo didattico in `bridge/ecash.py` (RSA da manuale, non per produzione) |
 
 Per segnalare vulnerabilità, leggi [`SECURITY.md`](SECURITY.md) — **non aprire issue pubbliche**.
 
@@ -167,6 +177,7 @@ Per segnalare vulnerabilità, leggi [`SECURITY.md`](SECURITY.md) — **non aprir
 | [`docs/03_SICUREZZA.md`](docs/03_SICUREZZA.md) | Modello di sicurezza |
 | [`docs/04_HARDWARE_GUIDA.md`](docs/04_HARDWARE_GUIDA.md) | Guida all'hardware reale |
 | [`docs/05_PROTOCOLLO_V2.md`](docs/05_PROTOCOLLO_V2.md) | Protocollo v2: falle del v1, comandi, formati, doppia spesa |
+| [`docs/06_PRIVACY_ECASH.md`](docs/06_PRIVACY_ECASH.md) | Modalità privacy: firma cieca, Garante, confronto con il v2 |
 | [`applet/README.md`](applet/README.md) | Compilazione e deploy JavaCard |
 
 ## Contribuire

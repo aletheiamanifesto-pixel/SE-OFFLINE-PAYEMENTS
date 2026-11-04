@@ -96,7 +96,7 @@ Per testare l'applet senza hardware fisico, utilizzare **jCardSim**:
 
 ```bash
 # Aggiungere a build.gradle:
-# testImplementation 'com.licel:jcardsim:3.0.5'
+# testImplementation 'com.klinec:jcardsim:3.0.5.11'
 gradle test
 ```
 
