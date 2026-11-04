@@ -6,6 +6,7 @@
  *
  * Utilizzo:
  *   gradle compileJava       — Compila le sorgenti Java
+ *   gradle test              — Esegue i test dell'applet nel simulatore jCardSim
  *   gradle buildCap          — Crea il file .cap installabile su JavaCard (richiede javacard-gradle-plugin)
  */
 
@@ -21,10 +22,19 @@ java {
     targetCompatibility = JavaVersion.VERSION_11
 }
 
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
 sourceSets {
     main {
         java {
             srcDirs = ['src']
+        }
+    }
+    test {
+        java {
+            srcDirs = ['test']
         }
     }
 }
@@ -43,7 +53,23 @@ dependencies {
      * e specificare il percorso corretto:
      *
      * compileOnly files('/path/to/javacard-sdk/api_export_files/api.jar')
+     *
+     * Per compilare e testare nel simulatore basta jCardSim (fork mantenuto
+     * pubblicato su Maven Central come com.klinec:jcardsim), che include
+     * le classi javacard.* e simula il chip dentro la JVM.
      */
+    compileOnly 'com.klinec:jcardsim:3.0.5.11'
+    testImplementation 'com.klinec:jcardsim:3.0.5.11'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'failed', 'skipped'
+        exceptionFormat 'full'
+    }
 }
 
 /*
