@@ -25,6 +25,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.exceptions import InvalidSignature
 
 from .se_interface import SecureElementInterface
+from . import protocollo_v2 as v2
 
 
 # =============================================================================
@@ -120,6 +121,28 @@ class SecureElementSimulator(SecureElementInterface):
         # come quando scegli "Pagamento" sul POS invece di "Ricarica".
         self._selected = False
 
+        # --- STATO DEL PROTOCOLLO v2 ---
+        # Finché il chip non viene personalizzato dall'Emittente resta in
+        # "modalità sviluppo" (protocollo v1, compatibile con i test esistenti).
+        # Dopo la personalizzazione i comandi v1 DEBIT/CREDIT vengono bloccati:
+        # il denaro si muove solo con ordini firmati o token di pagamento.
+        self._chiave_emittente: bytes | None = None
+        self._certificato: bytes | None = None
+        self._limite_detenzione = MAX_BALANCE
+        self._ultimo_contatore_visto: dict[bytes, int] = {}
+        self._revocati: set[bytes] = set()
+        self._versione_revoche = 0
+        self._nonce_usati: set[bytes] = set()
+        self._ultimo_pacchetto: bytes | None = None
+
+    @property
+    def personalizzato(self) -> bool:
+        return self._certificato is not None
+
+    @property
+    def device_id(self) -> bytes:
+        return v2.device_id_da_chiave(self.get_certificate())
+
     # =========================================================================
     # METODI APDU — La "fessura della cassaforte" per i bigliettini
     # =========================================================================
@@ -194,6 +217,8 @@ class SecureElementSimulator(SecureElementInterface):
             return self._handle_get_certificate()
         elif ins == INS_MUTUAL_AUTH:
             return self._handle_mutual_auth(data)
+        elif ins in self._comandi_v2():
+            return self._comandi_v2()[ins](data)
         else:
             # Istruzione non riconosciuta — come chiedere "voglio un gelato"
             # allo sportello della banca: non è un servizio disponibile.
@@ -242,6 +267,8 @@ class SecureElementSimulator(SecureElementInterface):
         Ritorna:
             True se l'addebito è riuscito, False se saldo insufficiente
         """
+        if self.personalizzato:
+            return False  # v2: il denaro esce solo con PAY o UNLOAD
         if amount <= 0 or amount > self._balance:
             return False
         self._balance -= amount
@@ -263,6 +290,8 @@ class SecureElementSimulator(SecureElementInterface):
         Ritorna:
             True se l'accredito è riuscito, False se importo non valido
         """
+        if self.personalizzato:
+            return False  # v2: il denaro entra solo con LOAD o RECEIVE
         if amount <= 0:
             return False
         if self._balance + amount > MAX_BALANCE:
@@ -296,6 +325,8 @@ class SecureElementSimulator(SecureElementInterface):
         Ritorna:
             La firma digitale in formato DER (byte grezzi)
         """
+        if self._firma_riservata(data):
+            raise PermissionError("prefisso riservato al protocollo v2: firma rifiutata")
         signature = self._private_key.sign(data, ec.ECDSA(hashes.SHA256()))
         return signature
 
@@ -366,6 +397,9 @@ class SecureElementSimulator(SecureElementInterface):
         1. I dati devono essere esattamente 4 byte (altrimenti → WRONG_LENGTH)
         2. Il saldo deve essere sufficiente (altrimenti → INSUFFICIENT_BALANCE)
         """
+        if self.personalizzato:
+            return self._make_response(b'', v2.SW_SECURITY_STATUS_NOT_SATISFIED)
+
         if len(data) < 4:
             return self._make_response(b'', SW_WRONG_LENGTH)
 
@@ -389,7 +423,13 @@ class SecureElementSimulator(SecureElementInterface):
 
         Come versare contanti al bancomat: i soldi entrano nel conto.
         Aspetta 4 byte big-endian con l'importo da accreditare.
+
+        ATTENZIONE: nel protocollo v1 questo comando non è autenticato.
+        Su un chip personalizzato (v2) è bloccato.
         """
+        if self.personalizzato:
+            return self._make_response(b'', v2.SW_SECURITY_STATUS_NOT_SATISFIED)
+
         if len(data) < 4:
             return self._make_response(b'', SW_WRONG_LENGTH)
 
@@ -423,6 +463,8 @@ class SecureElementSimulator(SecureElementInterface):
         """
         if len(data) == 0:
             return self._make_response(b'', SW_WRONG_LENGTH)
+        if self._firma_riservata(data):
+            return self._make_response(b'', v2.SW_SECURITY_STATUS_NOT_SATISFIED)
 
         signature = self._private_key.sign(data, ec.ECDSA(hashes.SHA256()))
         return self._make_response(signature, SW_OK)
@@ -464,6 +506,8 @@ class SecureElementSimulator(SecureElementInterface):
             challenge = os.urandom(32)
         else:
             challenge = data
+            if self._firma_riservata(challenge):
+                return self._make_response(b'', v2.SW_SECURITY_STATUS_NOT_SATISFIED)
 
         # Firmiamo la sfida per dimostrare la nostra identità
         signature = self._private_key.sign(challenge, ec.ECDSA(hashes.SHA256()))
@@ -471,6 +515,190 @@ class SecureElementSimulator(SecureElementInterface):
         # Rispondiamo con la sfida originale + la firma
         response_data = challenge + signature
         return self._make_response(response_data, SW_OK)
+
+    # =========================================================================
+    # PROTOCOLLO v2 — Pagamenti offline sicuri
+    # Vedi protocollo_v2.py e docs/05_PROTOCOLLO_V2.md per i formati.
+    # Ogni gestore prima verifica TUTTO e solo alla fine modifica lo stato:
+    # così un errore non lascia mai il chip "a metà" (come una transazione
+    # atomica JavaCard).
+    # =========================================================================
+
+    def _comandi_v2(self) -> dict:
+        return {
+            v2.INS_PERSONALIZE: self._handle_personalize,
+            v2.INS_GET_DEVICE_ID: self._handle_get_device_id,
+            v2.INS_LOAD: self._handle_load,
+            v2.INS_UNLOAD: self._handle_unload,
+            v2.INS_PAY: self._handle_pay,
+            v2.INS_RECEIVE: self._handle_receive,
+            v2.INS_GET_LAST_PAYMENT: self._handle_get_last_payment,
+            v2.INS_UPDATE_REVOCATIONS: self._handle_update_revocations,
+        }
+
+    def _firma_riservata(self, data: bytes) -> bool:
+        """Un chip personalizzato non firma dati che imitano messaggi v2."""
+        return self.personalizzato and data.startswith(v2.PREFISSO_RISERVATO)
+
+    def _handle_personalize(self, data: bytes) -> bytes:
+        """
+        PERSONALIZE: chiave pubblica dell'Emittente (65) + certificato del chip (145).
+        Si può fare una sola volta, come la personalizzazione in fabbrica.
+        """
+        if self.personalizzato:
+            return self._make_response(b'', SW_CONDITIONS_NOT_SATISFIED)
+        if len(data) != v2.PUB_LEN + v2.CERT_LEN:
+            return self._make_response(b'', SW_WRONG_LENGTH)
+
+        chiave_emittente, cert_bytes = data[:v2.PUB_LEN], data[v2.PUB_LEN:]
+        try:
+            cert = v2.Certificato.decode(cert_bytes)
+        except ValueError:
+            return self._make_response(b'', SW_WRONG_LENGTH)
+        if cert.chiave_pubblica != self.get_certificate() or not cert.valido(chiave_emittente):
+            return self._make_response(b'', v2.SW_SECURITY_STATUS_NOT_SATISFIED)
+
+        self._chiave_emittente = chiave_emittente
+        self._certificato = cert_bytes
+        self._limite_detenzione = min(cert.limite, MAX_BALANCE)
+        self._balance = 0  # in v2 il saldo nasce solo da ordini LOAD firmati
+        return self._make_response(cert.device_id, SW_OK)
+
+    def _handle_get_device_id(self, data: bytes) -> bytes:
+        return self._make_response(self.device_id, SW_OK)
+
+    def _verifica_ordine(self, tag: bytes, data: bytes):
+        """Controlla un ordine LOAD/UNLOAD. Ritorna (importo, nonce) o una status word."""
+        if not self.personalizzato:
+            return SW_CONDITIONS_NOT_SATISFIED
+        if len(data) != v2.ORDINE_LEN:
+            return SW_WRONG_LENGTH
+        corpo, firma = data[:v2.ORDINE_BODY_LEN], data[v2.ORDINE_BODY_LEN:]
+        if not corpo.startswith(tag) or not v2.verifica_raw(self._chiave_emittente, corpo, firma):
+            return v2.SW_SECURITY_STATUS_NOT_SATISFIED
+        if corpo[4:12] != self.device_id:
+            return v2.SW_WRONG_DATA
+        nonce = corpo[16:24]
+        if nonce in self._nonce_usati:
+            return v2.SW_REPLAY
+        return struct.unpack('>I', corpo[12:16])[0], nonce
+
+    def _handle_load(self, data: bytes) -> bytes:
+        """LOAD: l'Emittente trasferisce denaro dal conto al chip (online)."""
+        esito = self._verifica_ordine(v2.TAG_LOAD, data)
+        if isinstance(esito, int):
+            return self._make_response(b'', esito)
+        importo, nonce = esito
+        if self._balance + importo > self._limite_detenzione:
+            return self._make_response(b'', v2.SW_LIMIT_EXCEEDED)
+
+        self._nonce_usati.add(nonce)
+        self._balance += importo
+        return self._make_response(struct.pack('>I', self._balance), SW_OK)
+
+    def _handle_unload(self, data: bytes) -> bytes:
+        """
+        UNLOAD: il chip restituisce denaro all'Emittente (che lo versa sul conto).
+        Risponde con una firma del chip: è la prova che il saldo è stato davvero scalato.
+        """
+        esito = self._verifica_ordine(v2.TAG_UNLOAD, data)
+        if isinstance(esito, int):
+            return self._make_response(b'', esito)
+        importo, nonce = esito
+        if importo > self._balance:
+            return self._make_response(b'', SW_INSUFFICIENT_BALANCE)
+
+        self._nonce_usati.add(nonce)
+        self._balance -= importo
+        conferma = v2.TAG_UNLOAD_OK + data[4:v2.ORDINE_BODY_LEN]
+        return self._make_response(v2.firma_raw(self._private_key, conferma), SW_OK)
+
+    def _handle_pay(self, data: bytes) -> bytes:
+        """
+        PAY: payee_id (8) + importo (4).
+        Addebito, contatore e firma del token avvengono in un'unica operazione:
+        non esiste un momento in cui il saldo è scalato ma il token non esiste.
+        Il pacchetto resta salvato nel chip finché non se ne crea un altro,
+        così può essere riletto se la connessione NFC si interrompe.
+        """
+        if not self.personalizzato:
+            return self._make_response(b'', SW_CONDITIONS_NOT_SATISFIED)
+        if len(data) != v2.ID_LEN + 4:
+            return self._make_response(b'', SW_WRONG_LENGTH)
+        payee_id = data[:v2.ID_LEN]
+        importo = struct.unpack('>I', data[v2.ID_LEN:])[0]
+        if importo == 0 or payee_id == self.device_id:
+            return self._make_response(b'', v2.SW_WRONG_DATA)
+        if importo > self._balance:
+            return self._make_response(b'', SW_INSUFFICIENT_BALANCE)
+
+        token = v2.Token(self.device_id, payee_id, importo, self._counter + 1)
+        firma = v2.firma_raw(self._private_key, token.encode())
+        pacchetto = token.encode() + firma + self._certificato
+
+        self._balance -= importo
+        self._counter += 1
+        self._ultimo_pacchetto = pacchetto
+        return self._make_response(pacchetto, SW_OK)
+
+    def _handle_receive(self, data: bytes) -> bytes:
+        """
+        RECEIVE: il pacchetto di pagamento (237 byte).
+        Il chip del beneficiario verifica da solo, offline:
+          1. certificato del pagatore firmato dall'Emittente
+          2. pagatore non revocato
+          3. firma del token fatta dalla chiave del certificato
+          4. il token è destinato a QUESTO chip
+          5. contatore mai visto prima (anti-replay)
+          6. limite di detenzione rispettato
+        """
+        if not self.personalizzato:
+            return self._make_response(b'', SW_CONDITIONS_NOT_SATISFIED)
+        try:
+            pacchetto = v2.Pacchetto.decode(data)
+        except ValueError:
+            return self._make_response(b'', SW_WRONG_LENGTH)
+        token = pacchetto.token
+
+        if not pacchetto.certificato.valido(self._chiave_emittente):
+            return self._make_response(b'', v2.SW_SECURITY_STATUS_NOT_SATISFIED)
+        if token.payer_id in self._revocati:
+            return self._make_response(b'', v2.SW_REVOKED)
+        if not pacchetto.firma_valida():
+            return self._make_response(b'', v2.SW_SECURITY_STATUS_NOT_SATISFIED)
+        if token.payee_id != self.device_id:
+            return self._make_response(b'', v2.SW_WRONG_DATA)
+        if token.contatore <= self._ultimo_contatore_visto.get(token.payer_id, 0):
+            return self._make_response(b'', v2.SW_REPLAY)
+        if self._balance + token.importo > self._limite_detenzione:
+            return self._make_response(b'', v2.SW_LIMIT_EXCEEDED)
+
+        self._ultimo_contatore_visto[token.payer_id] = token.contatore
+        self._balance += token.importo
+        return self._make_response(struct.pack('>I', self._balance), SW_OK)
+
+    def _handle_get_last_payment(self, data: bytes) -> bytes:
+        if self._ultimo_pacchetto is None:
+            return self._make_response(b'', SW_CONDITIONS_NOT_SATISFIED)
+        return self._make_response(self._ultimo_pacchetto, SW_OK)
+
+    def _handle_update_revocations(self, data: bytes) -> bytes:
+        """UPDATE_REVOCATIONS: lista firmata dall'Emittente, accettata solo se più recente."""
+        if not self.personalizzato:
+            return self._make_response(b'', SW_CONDITIONS_NOT_SATISFIED)
+        if len(data) < 9 + v2.SIG_LEN:
+            return self._make_response(b'', SW_WRONG_LENGTH)
+        corpo, firma = data[:-v2.SIG_LEN], data[-v2.SIG_LEN:]
+        versione, n = struct.unpack('>IB', corpo[4:9])
+        if (not corpo.startswith(v2.TAG_REVOCHE) or len(corpo) != 9 + n * v2.ID_LEN
+                or not v2.verifica_raw(self._chiave_emittente, corpo, firma)):
+            return self._make_response(b'', v2.SW_SECURITY_STATUS_NOT_SATISFIED)
+        if versione <= self._versione_revoche:
+            return self._make_response(b'', v2.SW_REPLAY)
+
+        self._versione_revoche = versione
+        self._revocati = {corpo[9 + i * v2.ID_LEN: 9 + (i + 1) * v2.ID_LEN] for i in range(n)}
+        return self._make_response(struct.pack('>I', versione), SW_OK)
 
     # =========================================================================
     # UTILITÀ INTERNE

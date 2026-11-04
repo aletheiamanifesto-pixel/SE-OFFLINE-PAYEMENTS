@@ -23,7 +23,12 @@ Modalità mock (default se aegis-protocol non è raggiungibile):
 
 import os
 import struct
+import sys
 import time
+from pathlib import Path
+
+# Permette di lanciare lo script direttamente (python examples/...) senza pip install
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from host_app.python.se_simulator import SecureElementSimulator
 from bridge.aegis_client import AegisClient

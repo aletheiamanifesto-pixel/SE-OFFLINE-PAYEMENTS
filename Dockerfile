@@ -17,5 +17,6 @@ RUN pip install --no-cache-dir -e ".[dev]"
 # Porta di default (non usata in questa versione CLI, ma utile per futura API)
 EXPOSE 8000
 
-# Comando di default: esegui i test
-CMD ["python", "-m", "pytest", "tests/", "-v"]
+# Comando di default: esegui la demo completa
+# Per i test: docker run --rm aegis-offline-payments python -m pytest tests/ -v
+CMD ["python", "demo.py"]
